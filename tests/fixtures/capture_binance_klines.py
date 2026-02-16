@@ -22,8 +22,8 @@ except ImportError:
     print("Install with: pip install websockets")
     sys.exit(1)
 
-# Binance Futures WebSocket endpoint
-WS_URL = "wss://fstream.binance.com/ws"
+# Binance Futures WebSocket endpoint (combined stream)
+WS_BASE_URL = "wss://fstream.binance.com/stream"
 
 # Symbols to capture
 SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "hypeusdt"]
@@ -49,8 +49,9 @@ async def capture_klines():
         for tf in TIMEFRAMES:
             streams.append(f"{symbol}@kline_{tf}")
 
+    # Binance combined stream format: ?streams=stream1/stream2/stream3
     stream_names = "/".join(streams)
-    ws_url = f"{WS_URL}/{stream_names}"
+    ws_url = f"{WS_BASE_URL}?streams={stream_names}"
 
     print(f"Connecting to Binance WebSocket...")
     print(f"Symbols: {', '.join(s.upper() for s in SYMBOLS)}")
