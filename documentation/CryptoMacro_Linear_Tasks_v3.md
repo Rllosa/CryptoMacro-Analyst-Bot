@@ -176,16 +176,65 @@ TimescaleDB error: `cannot create a unique index without the column "time" (used
 - Python config loader module that validates configs on startup and rejects malformed input with clear errors
 - No thresholds hardcoded in any Phase 1–2 code — everything reads from config
 
+**Implementation Notes:**
+
+**Configuration Architecture**
+
+Created a modular, validated configuration system with three YAML files and a Python loader module. All Phase 1-2 services will read from these configs with no hardcoded values.
+
+**File Structure:**
+- `configs/symbols.yaml` — Asset definitions (BTC, ETH, SOL, HYPE) with Binance mappings, update cadences, and on-chain availability flags
+- `configs/providers.yaml` — All data source configurations (Binance WS, FRED, Yahoo, Coinglass, on-chain provider)
+- `configs/thresholds.yaml` — Phase 1-2 alert thresholds and regime classifier conditions
+- `configs/loader.py` — Validation and parsing module with clear error messages
+- `tests/test_config_loader.py` — 17 unit tests covering valid and malformed scenarios
+
+**Key Implementation Decisions:**
+
+1. **Phase Scope Enforcement**: `thresholds.yaml` explicitly marked as `"phase: 1-2"` with validation to prevent accidental Phase 3-4 threshold usage before those alerts are implemented. F-5b will add remaining thresholds.
+
+2. **On-Chain Provider Placeholder**: `providers.yaml` includes TBD placeholder awaiting F-2 provider decision, with hard constraint documented (`entity_tagging_required: true` per SCOPE.md).
+
+3. **Comprehensive Validation**: Config loader validates all required fields per F-5a acceptance criteria:
+   - FRED series IDs: DFF, DGS2, DGS10, M2SL, CPIAUCSL, PCEPI, ICSA
+   - Symbols: BTC, ETH, SOL, HYPE with Binance mappings
+   - Phase 1-2 alert types: VOL_EXPANSION, LEADERSHIP_ROTATION, BREAKOUT, REGIME_SHIFT, CORRELATION_BREAK
+   - All 5 regime definitions with deterministic conditions
+
+4. **Clear Error Messages**: Malformed configs produce descriptive errors pointing to exact issue:
+   - Example: `"symbols.yaml missing required key: 'all_symbols'"`
+   - Example: `"FRED series 'DFF' missing (required per F-5a acceptance criteria)"`
+   - Example: `"phase must be '1-2' for F-5a (got '3-4')"`
+
+5. **Helper Methods**: Config object provides convenience methods:
+   - `get_symbol_list()` → `["BTC", "ETH", "SOL", "HYPE"]`
+   - `get_onchain_symbols()` → `["BTC", "ETH"]`
+   - `get_alert_threshold(alert_type)` → alert configuration dict
+   - `get_regime_config(regime)` → regime conditions and drivers
+
+**Testing Completed:**
+- ✅ Config loader CLI test: all 3 YAMLs loaded and validated successfully
+- ✅ All 17 unit tests passing (11 valid scenarios + 6 malformed scenarios)
+- ✅ FRED series IDs validated per acceptance criteria
+- ✅ Symbols configuration covers all 4 assets with correct Binance mappings
+- ✅ Error messages descriptive and point to exact validation failure
+
+**Deliverables:**
+- 3 YAML configuration files (`symbols.yaml`, `providers.yaml`, `thresholds.yaml`)
+- Python config loader module with validation (`configs/loader.py`)
+- 17 unit tests, all passing (`tests/test_config_loader.py`)
+- CLI tool for config validation (`python configs/loader.py`)
+
 **Acceptance Criteria:**
-- [ ] All three YAML files parse without errors
-- [ ] `symbols.yaml` covers all 4 assets with correct Binance mappings
-- [ ] `providers.yaml` has correct FRED series IDs (DFF, DGS2, DGS10, M2SL, CPIAUCSL, PCEPI, ICSA)
-- [ ] Config loader validates and rejects malformed configs with clear error messages
-- [ ] No threshold values hardcoded in Phase 1–2 service code
+- [x] All three YAML files parse without errors
+- [x] `symbols.yaml` covers all 4 assets with correct Binance mappings
+- [x] `providers.yaml` has correct FRED series IDs (DFF, DGS2, DGS10, M2SL, CPIAUCSL, PCEPI, ICSA)
+- [x] Config loader validates and rejects malformed configs with clear error messages
+- [x] No threshold values hardcoded in Phase 1–2 service code
 
 **Tests:**
-- [ ] Unit test: config loader against valid YAML → passes
-- [ ] Unit test: config loader against YAML with missing required field → raises descriptive error
+- [x] Unit test: config loader against valid YAML → passes
+- [x] Unit test: config loader against YAML with missing required field → raises descriptive error
 
 ---
 
