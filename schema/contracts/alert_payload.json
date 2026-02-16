@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cryptomacro.local/schemas/alert_payload.json",
+  "title": "Alert Payload",
+  "description": "Schema for alert payloads published to NATS subject alerts.fired",
+  "type": "object",
+  "required": [
+    "alert_id",
+    "alert_type",
+    "symbol",
+    "severity",
+    "time",
+    "conditions",
+    "context"
+  ],
+  "properties": {
+    "alert_id": {
+      "type": "string",
+      "description": "Unique alert identifier (UUID)",
+      "format": "uuid",
+      "examples": ["550e8400-e29b-41d4-a716-446655440000"]
+    },
+    "alert_type": {
+      "type": "string",
+      "description": "Type of alert fired",
+      "enum": [
+        "VOL_EXPANSION",
+        "LEADERSHIP_ROTATION",
+        "BREAKOUT",
+        "REGIME_SHIFT",
+        "CORRELATION_BREAK",
+        "CROWDED_LEVERAGE",
+        "DELEVERAGING_EVENT",
+        "EXCHANGE_INFLOW_RISK",
+        "NETFLOW_SHIFT"
+      ]
+    },
+    "symbol": {
+      "type": ["string", "null"],
+      "description": "Asset symbol (null for market-wide alerts like REGIME_SHIFT)",
+      "pattern": "^[A-Z]{3,10}$",
+      "examples": ["BTC", "ETH", "SOL", "HYPE", null]
+    },
+    "severity": {
+      "type": "string",
+      "description": "Alert severity level",
+      "enum": ["LOW", "MEDIUM", "HIGH"]
+    },
+    "time": {
+      "type": "string",
+      "description": "Alert fire time in ISO 8601 UTC format",
+      "format": "date-time",
+      "examples": ["2026-02-16T12:00:00Z"]
+    },
+    "conditions": {
+      "type": "object",
+      "description": "Trigger conditions met with their values",
+      "additionalProperties": true
+    },
+    "context": {
+      "type": "object",
+      "description": "Additional context (regime, features, etc.)",
+      "properties": {
+        "regime": {
+          "type": "string",
+          "enum": ["RISK_ON_TREND", "RISK_OFF_STRESS", "CHOP_RANGE", "VOL_EXPANSION", "DELEVERAGING"]
+        },
+        "regime_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable alert message",
+      "minLength": 1
+    },
+    "cooldown_until": {
+      "type": "string",
+      "description": "Cooldown expiry time in ISO 8601 UTC format",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
