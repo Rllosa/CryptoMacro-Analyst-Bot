@@ -171,6 +171,48 @@ gh pr merge
 - **Never mark a task "Done"** until the PR is actually merged to main.
 - **If a task is abandoned mid-work**, update to "Canceled" with a comment explaining why.
 
+#### Documentation Updates Before Closing Tasks
+
+When implementation requires architectural modifications or decisions not explicitly detailed in the original task spec, **update documentation BEFORE marking the task as Done**:
+
+1. **Identify Implementation Deviations**
+   - Architectural requirements discovered during implementation (e.g., TimescaleDB composite primary keys)
+   - Design decisions that differ from or expand on the task spec
+   - Technical constraints that shaped the solution
+
+2. **Update Linear Task Description**
+   - Add an "Implementation Notes" section to the Linear task description
+   - Document key architectural decisions and their rationale
+   - Include technical details that future developers need to understand
+   - Action: `mcp__linear-server__update_issue` with updated description
+
+3. **Update Task Documentation**
+   - Update `documentation/CryptoMacro_Linear_Tasks_v3.md` with implementation details
+   - Add notes about architectural decisions under the task's "Requirements" or as a new "Implementation Notes" subsection
+   - Ensure future tasks building on this one have accurate context
+
+4. **Complete the Task**
+   - Only after documentation is updated, mark Linear task as "Done"
+
+**Example (F-4):**
+```
+Implementation Note: All hypertables use composite primary keys including
+the time column (e.g., PRIMARY KEY (time, symbol, timeframe)) rather than
+standalone UUID PRIMARY KEY. This is a TimescaleDB requirement for
+partitioning - the time column must be part of any unique constraint.
+```
+
+**When to Document:**
+- Architectural patterns established (primary key design, error handling approach)
+- Technical constraints discovered (API limitations, database requirements)
+- Design decisions with trade-offs (chosen approach and why alternatives were rejected)
+- Implementation details that deviate from task spec wording
+
+**What NOT to Document:**
+- Trivial implementation details (variable names, file organization)
+- Temporary debugging or development notes
+- Information already clear from code comments
+
 ---
 
 ## 3. Code Standards
