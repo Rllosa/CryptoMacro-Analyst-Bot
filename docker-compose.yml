@@ -1,0 +1,71 @@
+services:
+  # TimescaleDB - Time-series database for market data, features, alerts
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: cryptomacro-timescaledb
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cryptomacro}
+      POSTGRES_USER: ${POSTGRES_USER:-cryptomacro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cryptomacro_dev_password}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - cryptomacro-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cryptomacro} -d ${POSTGRES_DB:-cryptomacro}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Redis - Caching layer for latest state (features, regime, health)
+  redis:
+    image: redis:7-alpine
+    container_name: cryptomacro-redis
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cryptomacro-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # NATS JetStream - Message bus for event streaming
+  # Note: No healthcheck due to minimal scratch-based image
+  # Monitor via http://localhost:8222/varz endpoint instead
+  nats:
+    image: nats:latest
+    container_name: cryptomacro-nats
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+    volumes:
+      - nats_data:/data
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+networks:
+  cryptomacro-net:
+    name: cryptomacro-net
+    driver: bridge
+
+volumes:
+  timescaledb_data:
+    name: cryptomacro-timescaledb-data
+  redis_data:
+    name: cryptomacro-redis-data
+  nats_data:
+    name: cryptomacro-nats-data
