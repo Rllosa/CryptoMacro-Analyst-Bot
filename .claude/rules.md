@@ -54,7 +54,10 @@ These are non-negotiable. Violating any of these is a blocking issue regardless 
     - `F-3: Add docker-compose with TimescaleDB, Redis, NATS`
     - `DI-1: Implement Binance WS reconnect with exponential backoff`
     - `AL-1: Add cooldown registry with YAML-driven durations`
-- **Never mention Claude or AI** in commit messages, PR descriptions, or code comments.
+- **Never mention Claude or AI** in commit messages, PR descriptions, or code comments. This includes:
+  - No "Co-Authored-By: Claude..." lines in commit messages
+  - No "Generated with Claude Code" or similar attribution in PRs
+  - No AI tool mentions in code comments
 - Keep commits atomic: one logical change per commit. A task may have multiple commits.
 - Write commit messages in imperative mood ("Add X", "Fix Y", not "Added X", "Fixes Y").
 
@@ -108,6 +111,8 @@ PR description template:
 ## Next Steps
 [What comes after this PR in the execution order]
 ```
+
+**IMPORTANT:** Do NOT include any Claude Code, AI, or automated tool attribution lines (e.g., "🤖 Generated with Claude Code") in PR descriptions. This violates the "no AI mention" rule (see line 57 and line 486).
 
 ### 2.4 PR Review Checklist (Self-Review Before Submitting)
 Before creating a PR, verify:
