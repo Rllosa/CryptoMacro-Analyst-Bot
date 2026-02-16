@@ -153,7 +153,7 @@ def main():
 
     # Get migration files
     project_root = Path(__file__).parent.parent
-    migrations_dir = project_root / "database" / "migrations"
+    migrations_dir = project_root / "schema" / "migrations"
     migration_files = get_migration_files(migrations_dir)
 
     print(f"📂 Found {len(migration_files)} migration files\n")
