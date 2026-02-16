@@ -96,6 +96,17 @@
 
 ---
 
+## Implementation Notes
+
+**NATS Healthcheck Limitation:**
+- NATS does not have a Docker healthcheck in the docker-compose configuration
+- **Technical constraint**: NATS official image uses a minimal scratch-based image without shell utilities (no `/bin/sh` for CMD-SHELL healthcheck)
+- **Workaround**: NATS health can be monitored via HTTP monitoring endpoint at `http://localhost:8222/varz` instead
+- TimescaleDB and Redis both have functional Docker healthchecks as specified
+- This is a limitation of the NATS Docker image architecture, not a configuration choice
+
+---
+
 ### F-4: Database Schema & Migrations
 
 **Goal:** Full TimescaleDB schema from spec Section 5 — all hypertables, continuous aggregates, indexes.

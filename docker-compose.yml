@@ -57,6 +57,95 @@ services:
       - cryptomacro-net
     restart: unless-stopped
 
+  # Collector - Rust WebSocket collector (Binance Futures)
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    container_name: cryptomacro-collector
+    env_file: .env
+    depends_on:
+      - nats
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+  # Processor - NATS-to-TimescaleDB normalizer
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    container_name: cryptomacro-processor
+    env_file: .env
+    depends_on:
+      - timescaledb
+      - nats
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+  # Analyzer - Feature engine, regime classifier, alert engine
+  analyzer:
+    build:
+      context: ./analyzer
+      dockerfile: Dockerfile
+    container_name: cryptomacro-analyzer
+    env_file: .env
+    volumes:
+      - ./configs:/app/configs:ro
+    depends_on:
+      - timescaledb
+      - redis
+      - nats
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+  # Bot - Discord bot for alerts and commands
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: cryptomacro-bot
+    env_file: .env
+    depends_on:
+      - timescaledb
+      - redis
+      - nats
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+  # API - REST API for dashboard
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: cryptomacro-api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - timescaledb
+      - redis
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
+  # Dashboard - React frontend with Vite
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: cryptomacro-dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - cryptomacro-net
+    restart: unless-stopped
+
 networks:
   cryptomacro-net:
     name: cryptomacro-net
