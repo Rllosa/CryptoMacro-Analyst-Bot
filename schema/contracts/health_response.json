@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cryptomacro.local/schemas/health_response.json",
+  "title": "Health Response",
+  "description": "Schema for /api/health endpoint response",
+  "type": "object",
+  "required": [
+    "status",
+    "timestamp",
+    "components"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Overall system health status",
+      "enum": ["HEALTHY", "DEGRADED", "DOWN"]
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "Health check timestamp in ISO 8601 UTC format",
+      "format": "date-time"
+    },
+    "components": {
+      "type": "object",
+      "description": "Health status of individual components",
+      "required": [
+        "binance_ws",
+        "timescaledb",
+        "redis",
+        "nats"
+      ],
+      "properties": {
+        "binance_ws": {
+          "$ref": "#/definitions/component_health"
+        },
+        "coinglass": {
+          "$ref": "#/definitions/component_health"
+        },
+        "fred": {
+          "$ref": "#/definitions/component_health"
+        },
+        "yahoo_finance": {
+          "$ref": "#/definitions/component_health"
+        },
+        "onchain_provider": {
+          "$ref": "#/definitions/component_health"
+        },
+        "timescaledb": {
+          "$ref": "#/definitions/component_health"
+        },
+        "redis": {
+          "$ref": "#/definitions/component_health"
+        },
+        "nats": {
+          "$ref": "#/definitions/component_health"
+        },
+        "discord": {
+          "$ref": "#/definitions/component_health"
+        },
+        "claude_api": {
+          "$ref": "#/definitions/component_health"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/component_health"
+      }
+    },
+    "degraded_features": {
+      "type": "array",
+      "description": "List of features currently degraded or unavailable",
+      "items": {
+        "type": "string"
+      }
+    },
+    "uptime_seconds": {
+      "type": "integer",
+      "description": "System uptime in seconds",
+      "minimum": 0
+    }
+  },
+  "definitions": {
+    "component_health": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["HEALTHY", "DEGRADED", "DOWN"]
+        },
+        "last_check": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last health check"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable status message or error"
+        },
+        "latency_ms": {
+          "type": "number",
+          "description": "Response latency in milliseconds",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

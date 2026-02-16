@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cryptomacro.local/schemas/nats_candle_message.json",
+  "title": "NATS Candle Message",
+  "description": "Schema for candle messages published to NATS subject market.candles.{symbol}",
+  "type": "object",
+  "required": [
+    "symbol",
+    "exchange",
+    "timeframe",
+    "time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "quote_volume"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)",
+      "pattern": "^[A-Z]{3,10}USDT$",
+      "examples": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "HYPEUSDT"]
+    },
+    "exchange": {
+      "type": "string",
+      "description": "Exchange name",
+      "enum": ["binance"],
+      "default": "binance"
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Candle timeframe",
+      "enum": ["1m", "5m", "1h"],
+      "examples": ["1m", "5m", "1h"]
+    },
+    "time": {
+      "type": "string",
+      "description": "Candle open time in ISO 8601 UTC format",
+      "format": "date-time",
+      "examples": ["2026-02-16T12:00:00Z"]
+    },
+    "open": {
+      "type": "number",
+      "description": "Opening price",
+      "exclusiveMinimum": 0
+    },
+    "high": {
+      "type": "number",
+      "description": "Highest price",
+      "exclusiveMinimum": 0
+    },
+    "low": {
+      "type": "number",
+      "description": "Lowest price",
+      "exclusiveMinimum": 0
+    },
+    "close": {
+      "type": "number",
+      "description": "Closing price",
+      "exclusiveMinimum": 0
+    },
+    "volume": {
+      "type": "number",
+      "description": "Base asset volume",
+      "minimum": 0
+    },
+    "quote_volume": {
+      "type": "number",
+      "description": "Quote asset volume (USD)",
+      "minimum": 0
+    },
+    "trades": {
+      "type": "integer",
+      "description": "Number of trades in this candle",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}
