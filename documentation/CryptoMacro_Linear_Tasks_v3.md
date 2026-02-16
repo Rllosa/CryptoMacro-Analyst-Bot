@@ -96,6 +96,17 @@
 
 ---
 
+## Implementation Notes
+
+**NATS Healthcheck Limitation:**
+- NATS does not have a Docker healthcheck in the docker-compose configuration
+- **Technical constraint**: NATS official image uses a minimal scratch-based image without shell utilities (no `/bin/sh` for CMD-SHELL healthcheck)
+- **Workaround**: NATS health can be monitored via HTTP monitoring endpoint at `http://localhost:8222/varz` instead
+- TimescaleDB and Redis both have functional Docker healthchecks as specified
+- This is a limitation of the NATS Docker image architecture, not a configuration choice
+
+---
+
 ### F-4: Database Schema & Migrations
 
 **Goal:** Full TimescaleDB schema from spec Section 5 — all hypertables, continuous aggregates, indexes.
@@ -285,6 +296,45 @@ Created a modular, validated configuration system with three YAML files and a Py
 
 **Tests:**
 - [ ] Automated: CI script that builds all services and verifies exit code 0
+
+---
+
+## Implementation Notes
+
+**Project Structure:**
+- Created 6 service directories: collector/ (Rust), processor/, analyzer/, bot/, api/ (Python), dashboard/ (React)
+- Moved `database/migrations/` to `schema/migrations/` for better organization
+- Created `schema/contracts/` placeholder for F-7 (JSON schemas)
+- Created `eval/` directory with 4 placeholder files for evaluation framework (EV-1 through EV-4)
+
+**Service Skeletons:**
+- **collector/** (Rust): Cargo.toml with async-nats 0.38, tokio 1.42, tokio-tungstenite 0.26, serde, tracing. Multi-stage Dockerfile for optimized builds
+- **processor/** (Python): NATS-to-TimescaleDB normalizer with asyncio-nats-client, psycopg3, structlog
+- **analyzer/** (Python): Feature engine + regime + alerts with pandas, numpy, ta library, pyyaml for config loading
+- **bot/** (Python): Discord bot with discord.py 2.3, anthropic SDK 0.40+ for LLM integration
+- **api/** (Python): FastAPI REST API with uvicorn standard server
+- **dashboard/** (React): Vite + React 18 with react-router-dom, 6 view stubs (CommandCenter, AssetDetail, MacroDashboard, OnChainIntelligence, IntelligenceCenter, Evaluation), lightweight-charts and recharts for data visualization
+
+**Docker Compose Integration:**
+- All 6 services added to docker-compose.yml with proper dependency chains
+- collector → depends on NATS
+- processor → depends on TimescaleDB + NATS
+- analyzer → depends on TimescaleDB + Redis + NATS (mounts configs/ volume read-only)
+- bot → depends on TimescaleDB + Redis + NATS
+- api → depends on TimescaleDB + Redis, exposes port 8000
+- dashboard → depends on api, exposes port 3000 (nginx serves on port 80 internally)
+
+**Verification:**
+- All Python services verified with `python3 -m py_compile` - no syntax errors
+- Rust collector structure validated (Cargo.toml dependencies defined, builds in Docker)
+- docker-compose.yml syntax validated
+
+**Technical Decisions:**
+- Used pyproject.toml (PEP 518) for all Python services instead of requirements.txt for modern Python packaging
+- Used multi-stage Docker builds for Rust collector to minimize final image size
+- Dashboard uses nginx in production Dockerfile for static file serving
+- All Python services use python:3.11-slim base image for consistency
+- Analyzer service mounts configs/ directory read-only for threshold access
 
 ---
 
