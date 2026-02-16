@@ -1,0 +1,125 @@
+# CryptoMacro Analyst Bot — Symbol Configuration
+# Defines the 4 core assets tracked by the system
+
+version: "1.0"
+
+# Asset definitions with Binance mappings and update cadences
+assets:
+  BTC:
+    name: "Bitcoin"
+    symbol: "BTC"
+    binance_symbol: "BTCUSDT"
+    binance_futures_symbol: "BTCUSDT"
+
+    # Data update cadences
+    update_cadences:
+      candles_1m: "real-time"        # WebSocket stream
+      candles_5m: "5 minutes"         # Continuous aggregate auto-refresh
+      candles_1h: "1 hour"            # Continuous aggregate auto-refresh
+      derivatives: "5 minutes"        # Coinglass API poll
+      onchain_flows: "1 hour"         # On-chain provider (BTC only)
+      features: "5 minutes"           # Feature engine computation cycle
+
+    # Asset properties
+    properties:
+      market_cap_rank: 1
+      onchain_available: true         # BTC has on-chain flow data
+      derivatives_available: true
+      macro_correlation: "high"       # Primary BTC-macro correlation tracking
+
+  ETH:
+    name: "Ethereum"
+    symbol: "ETH"
+    binance_symbol: "ETHUSDT"
+    binance_futures_symbol: "ETHUSDT"
+
+    update_cadences:
+      candles_1m: "real-time"
+      candles_5m: "5 minutes"
+      candles_1h: "1 hour"
+      derivatives: "5 minutes"
+      onchain_flows: "1 hour"         # On-chain provider (ETH only)
+      features: "5 minutes"
+
+    properties:
+      market_cap_rank: 2
+      onchain_available: true         # ETH has on-chain flow data
+      derivatives_available: true
+      macro_correlation: "medium"
+
+  SOL:
+    name: "Solana"
+    symbol: "SOL"
+    binance_symbol: "SOLUSDT"
+    binance_futures_symbol: "SOLUSDT"
+
+    update_cadences:
+      candles_1m: "real-time"
+      candles_5m: "5 minutes"
+      candles_1h: "1 hour"
+      derivatives: "5 minutes"
+      onchain_flows: null             # Not available per SCOPE.md
+      features: "5 minutes"
+
+    properties:
+      market_cap_rank: 5              # Approximate
+      onchain_available: false        # SOL on-chain explicitly out of scope
+      derivatives_available: true
+      macro_correlation: "low"
+
+  HYPE:
+    name: "Hyperliquid"
+    symbol: "HYPE"
+    binance_symbol: "HYPEUSDT"
+    binance_futures_symbol: "HYPEUSDT"
+
+    update_cadences:
+      candles_1m: "real-time"
+      candles_5m: "5 minutes"
+      candles_1h: "1 hour"
+      derivatives: "5 minutes"
+      onchain_flows: null             # Not applicable (perp DEX token)
+      features: "5 minutes"
+
+    properties:
+      market_cap_rank: 100            # Approximate
+      onchain_available: false        # HYPE on-chain explicitly out of scope
+      derivatives_available: true
+      macro_correlation: "low"
+
+# Symbol list for iteration
+all_symbols:
+  - BTC
+  - ETH
+  - SOL
+  - HYPE
+
+# Symbols with on-chain data (BTC and ETH only per SCOPE.md)
+onchain_symbols:
+  - BTC
+  - ETH
+
+# Primary asset for macro correlation tracking
+primary_macro_correlation_asset: "BTC"
+
+# Feature computation settings
+feature_computation:
+  cycle_interval: "5 minutes"
+  required_candle_history: 200      # Minimum 1m candles for indicator computation
+  lookback_windows:
+    short: "1 hour"
+    medium: "4 hours"
+    long: "24 hours"
+    correlation: "30 days"
+
+# Relative strength pairs for LEADERSHIP_ROTATION alert
+relative_strength_pairs:
+  - base: "BTC"
+    quote: "ETH"
+    pair_name: "ETH/BTC"
+  - base: "BTC"
+    quote: "SOL"
+    pair_name: "SOL/BTC"
+  - base: "BTC"
+    quote: "HYPE"
+    pair_name: "HYPE/BTC"

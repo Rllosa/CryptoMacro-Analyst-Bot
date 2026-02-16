@@ -1,0 +1,259 @@
+# CryptoMacro Analyst Bot — Data Provider Configuration
+# Defines all external data sources and their connection parameters
+
+version: "1.0"
+
+# Binance WebSocket and REST API configuration
+binance:
+  # WebSocket streams for real-time 1-minute candles
+  websocket:
+    base_url: "wss://fstream.binance.com"
+    streams:
+      candles:
+        # Kline (candlestick) streams for 1m timeframe
+        btc: "ws/btcusdt@kline_1m"
+        eth: "ws/ethusdt@kline_1m"
+        sol: "ws/solusdt@kline_1m"
+        hype: "ws/hypeusdt@kline_1m"
+
+      # Aggregate trade streams for volume confirmation
+      trades:
+        btc: "ws/btcusdt@aggTrade"
+        eth: "ws/ethusdt@aggTrade"
+        sol: "ws/solusdt@aggTrade"
+        hype: "ws/hypeusdt@aggTrade"
+
+    # Connection settings
+    connection:
+      ping_interval: 180              # Seconds (3 minutes)
+      pong_timeout: 10                # Seconds
+      reconnect_delay_base: 1         # Seconds (exponential backoff base)
+      max_reconnect_delay: 60         # Seconds
+      heartbeat_timeout: 30           # Seconds (log warning if no message)
+
+  # REST API for backfilling gaps
+  rest_api:
+    base_url: "https://fapi.binance.com"
+    endpoints:
+      klines: "/fapi/v1/klines"
+    rate_limits:
+      requests_per_minute: 1200
+      weight_per_minute: 2400
+
+# FRED (Federal Reserve Economic Data) API
+fred:
+  base_url: "https://api.stlouisfed.org/fred"
+
+  # Macro indicator series IDs per task requirements
+  series:
+    # Interest rates and yields
+    DFF:                              # Federal Funds Effective Rate (daily)
+      name: "Fed Funds Rate"
+      frequency: "daily"
+      series_id: "DFF"
+
+    DGS2:                             # 2-Year Treasury Constant Maturity Rate
+      name: "2-Year Treasury Yield"
+      frequency: "daily"
+      series_id: "DGS2"
+
+    DGS10:                            # 10-Year Treasury Constant Maturity Rate
+      name: "10-Year Treasury Yield"
+      frequency: "daily"
+      series_id: "DGS10"
+
+    # Monetary aggregates
+    M2SL:                             # M2 Money Supply (weekly)
+      name: "M2 Money Supply"
+      frequency: "weekly"
+      series_id: "M2SL"
+
+    # Inflation indicators
+    CPIAUCSL:                         # Consumer Price Index (monthly)
+      name: "CPI (All Urban Consumers)"
+      frequency: "monthly"
+      series_id: "CPIAUCSL"
+
+    PCEPI:                            # Personal Consumption Expenditures Price Index
+      name: "PCE Price Index"
+      frequency: "monthly"
+      series_id: "PCEPI"
+
+    # Labor market
+    ICSA:                             # Initial Claims (Jobless Claims, weekly)
+      name: "Initial Jobless Claims"
+      frequency: "weekly"
+      series_id: "ICSA"
+
+  # Polling configuration
+  polling:
+    daily_series:                     # DFF, DGS2, DGS10
+      interval: "1 day"
+      time: "09:00"                   # UTC
+
+    weekly_series:                    # M2SL, ICSA
+      interval: "1 week"
+      day: "monday"
+      time: "10:00"                   # UTC
+
+    monthly_series:                   # CPIAUCSL, PCEPI
+      interval: "1 month"
+      day: 1
+      time: "12:00"                   # UTC
+
+  # Rate limits
+  rate_limits:
+    requests_per_minute: 120
+
+  # Backfill settings
+  backfill:
+    lookback_days: 730                # 2 years
+
+# Yahoo Finance API (yfinance library)
+yahoo_finance:
+  # Ticker symbols for macro market indicators
+  tickers:
+    DXY:                              # US Dollar Index
+      symbol: "DX-Y.NYB"
+      name: "US Dollar Index"
+      category: "currency"
+
+    SPX:                              # S&P 500 Index
+      symbol: "^GSPC"
+      name: "S&P 500"
+      category: "equity"
+
+    NDX:                              # Nasdaq Composite
+      symbol: "^IXIC"
+      name: "Nasdaq Composite"
+      category: "equity"
+
+    VIX:                              # CBOE Volatility Index
+      symbol: "^VIX"
+      name: "VIX"
+      category: "volatility"
+
+    GOLD:                             # Gold Futures
+      symbol: "GC=F"
+      name: "Gold Futures"
+      category: "commodity"
+
+  # Polling configuration
+  polling:
+    interval: "5 minutes"
+    market_hours_only: true           # Only poll during US market hours
+    market_hours:
+      open: "13:30"                   # UTC (9:30 AM ET)
+      close: "20:00"                  # UTC (4:00 PM ET)
+      timezone: "America/New_York"
+
+  # Backfill settings
+  backfill:
+    lookback_days: 730                # 2 years
+    interval: "1d"                    # Daily data for backfill
+
+  # Weekend/holiday handling
+  fallback:
+    use_last_known_value: true
+    max_staleness_hours: 72           # 3 days
+
+# Coinglass API (derivatives data)
+coinglass:
+  base_url: "https://open-api.coinglass.com/public/v2"
+
+  # Endpoints
+  endpoints:
+    funding_rate: "/funding"
+    open_interest: "/open_interest"
+    liquidations: "/liquidation"
+    long_short_ratio: "/long_short_ratio"
+
+  # Supported exchanges
+  exchanges:
+    - "binance"
+    - "okx"
+    - "bybit"
+
+  # Supported symbols
+  symbols:
+    - "BTC"
+    - "ETH"
+    - "SOL"
+    - "HYPE"
+
+  # Polling configuration
+  polling:
+    funding_oi_interval: "5 minutes"
+    liquidations_interval: "1 minute"
+
+  # Rate limits
+  rate_limits:
+    requests_per_minute: 60
+
+  # Graceful degradation
+  degradation:
+    max_consecutive_failures: 3
+    backoff_multiplier: 2
+    alert_on_degradation: true
+
+# On-chain data provider (placeholder — to be configured after F-2 provider decision)
+onchain_provider:
+  # Provider will be either Glassnode or CryptoQuant (decided in F-2)
+  provider: "TBD"                     # Set after F-2: On-Chain Provider Decision Gate
+
+  # Placeholder configuration (will be replaced after provider decision)
+  placeholder:
+    base_url: "TBD"
+    api_version: "TBD"
+
+    # Required data per SCOPE.md: entity-tagged exchange flows only
+    required_data:
+      - "exchange_inflows"            # Must be entity-tagged
+      - "exchange_outflows"           # Must be entity-tagged
+      - "netflow"                     # Derived from in/out
+      - "usd_values"                  # Required for cross-asset comparison
+
+    # Hard constraint: entity tagging required
+    entity_tagging_required: true     # Hard gate per SCOPE.md
+
+    # Supported assets
+    symbols:
+      - "BTC"                         # BTC on-chain only per SCOPE.md
+      - "ETH"                         # ETH on-chain only per SCOPE.md
+
+    # Polling configuration
+    polling:
+      interval: "1 hour"              # Or best available resolution
+
+    # Backfill settings
+    backfill:
+      lookback_days: 90
+
+  # Graceful degradation
+  degradation:
+    max_consecutive_failures: 3
+    backoff_multiplier: 2
+    alert_on_degradation: true
+    disable_onchain_alerts: true      # Auto-disable flow alerts when degraded
+
+# Health check configuration for all providers
+health_checks:
+  interval: 30                        # Seconds
+  timeout: 10                         # Seconds
+
+  # Per-provider health thresholds
+  thresholds:
+    binance_ws:
+      max_silence_seconds: 120        # 2 minutes without message
+
+    fred:
+      max_staleness_hours: 48         # 2 days
+
+    yahoo:
+      max_staleness_hours: 24         # 1 day (weekdays only)
+
+    coinglass:
+      max_staleness_minutes: 15       # 15 minutes
+
+    onchain_provider:
+      max_staleness_hours: 2          # 2 hours
