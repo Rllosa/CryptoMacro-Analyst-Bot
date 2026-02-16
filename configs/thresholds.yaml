@@ -1,0 +1,414 @@
+# CryptoMacro Analyst Bot — Thresholds Configuration (Phase 1-2 Only)
+# This file contains ONLY the thresholds needed for Phase 1-2 implementation
+# Additional thresholds (CROWDED_LEVERAGE, DELEVERAGING_EVENT, on-chain alerts)
+# will be added in F-5b after those alert types are implemented
+
+version: "1.0"
+phase: "1-2"                          # Phases 1-2 only (crypto market alerts + regime)
+
+# =============================================================================
+# ALERT TYPE: VOL_EXPANSION
+# Fires when realized volatility and volume both spike with breakout confirmation
+# =============================================================================
+vol_expansion:
+  # Primary conditions (all must be met)
+  conditions:
+    rv_1h_zscore: 2.0                 # Realized volatility 1h z-score threshold
+    volume_zscore: 1.5                # Volume z-score threshold
+    breakout_required: true           # Must have breakout flag from feature engine
+
+  # Severity escalation
+  severity:
+    base: "MEDIUM"
+    escalate_to_high:                 # Conditions for HIGH severity
+      - rv_1h_zscore: 2.5
+        volume_zscore: 2.0
+        breakout_type: "24h"          # 24h breakout (not just 4h)
+
+  # Persistence and cooldown
+  persistence_cycles: 2               # Must hold for 2 consecutive 5m cycles (10 min)
+  cooldown_minutes: 30
+
+  # Deduplication
+  dedup_key_fields:
+    - "symbol"
+    - "direction"                     # "up" or "down"
+
+# =============================================================================
+# ALERT TYPE: LEADERSHIP_ROTATION
+# Detects significant relative strength shifts between assets
+# =============================================================================
+leadership_rotation:
+  # Primary condition
+  conditions:
+    rs_zscore: 2.0                    # Relative strength z-score threshold
+
+  # Cross-pairs to monitor (from symbols.yaml)
+  pairs:
+    - "ETH/BTC"
+    - "SOL/BTC"
+    - "HYPE/BTC"
+
+  # Severity (always MEDIUM for leadership rotation in Phase 1)
+  severity: "MEDIUM"
+
+  # Persistence and cooldown
+  persistence_cycles: 2               # 2 cycles (10 min)
+  cooldown_minutes: 120               # 2 hours
+
+  # Deduplication
+  dedup_key_fields:
+    - "pair"
+    - "direction"                     # Which asset is outperforming
+
+# =============================================================================
+# ALERT TYPE: BREAKOUT (Price breakout detection)
+# Alert on price breakouts beyond 4h/24h ranges with volume confirmation
+# =============================================================================
+breakout:
+  # Volume confirmation required
+  conditions:
+    volume_zscore_min: 1.0            # Minimum volume z-score for confirmation
+
+  # Severity by breakout type
+  severity:
+    breakout_4h: "MEDIUM"
+    breakout_24h: "HIGH"
+
+  # Persistence and cooldown
+  persistence_cycles: 2               # 2 cycles (10 min)
+  cooldown_minutes: 60                # 1 hour
+
+  # Deduplication
+  dedup_key_fields:
+    - "symbol"
+    - "direction"                     # "high" or "low"
+    - "timeframe"                     # "4h" or "24h"
+
+# =============================================================================
+# ALERT TYPE: REGIME_SHIFT
+# Fires when regime changes with sufficient confidence
+# =============================================================================
+regime_shift:
+  # Minimum confidence for firing
+  min_confidence: 0.5                 # 0.0-1.0 scale
+
+  # Do not fire below this confidence (uncertain regime)
+  uncertain_threshold: 0.4
+
+  # Severity (always HIGH for regime shifts)
+  severity: "HIGH"
+
+  # Cooldown
+  cooldown_minutes: 90                # 1.5 hours
+
+  # No persistence required (regime is already a 5m cycle output)
+  persistence_cycles: 1
+
+  # Deduplication
+  dedup_key_fields:
+    - "old_regime"
+    - "new_regime"
+
+# =============================================================================
+# ALERT TYPE: CORRELATION_BREAK
+# Detect BTC-equity or BTC-DXY correlation breakdown
+# =============================================================================
+correlation_break:
+  # Correlation delta threshold (30d vs 7d divergence)
+  conditions:
+    delta_threshold: 0.3              # 30 percentage point shift
+
+  # Pairs to monitor
+  pairs:
+    - name: "BTC-SPX"
+      base: "BTC"
+      quote: "SPX"
+    - name: "BTC-DXY"
+      base: "BTC"
+      quote: "DXY"
+
+  # Severity
+  severity: "MEDIUM"
+
+  # Persistence and cooldown
+  persistence_cycles: 2               # 2 cycles (10 min)
+  cooldown_minutes: 120               # 2 hours
+
+  # Deduplication
+  dedup_key_fields:
+    - "pair"
+    - "direction"                     # "increasing" or "decreasing"
+
+# =============================================================================
+# REGIME CLASSIFIER THRESHOLDS
+# All 5 regimes with deterministic conditions
+# =============================================================================
+regime_classifier:
+  # Confidence calculation
+  confidence:
+    base_weight: 0.4                  # Base confidence if primary condition met
+    condition_weight: 0.15            # Weight per additional condition met
+    zscore_bonus_threshold: 3.0       # Bonus confidence if z-score > 3.0
+    zscore_bonus: 0.1
+
+  # Minimum confidence to output regime
+  min_confidence: 0.4
+
+  # Regime definitions with conditions
+  regimes:
+    # Regime 1: RISK_ON_TREND
+    RISK_ON_TREND:
+      primary_condition:
+        field: "btc_trend"
+        operator: ">"
+        value: 0                      # Positive price trend
+
+      additional_conditions:
+        - field: "volatility_regime"
+          operator: "=="
+          value: "low"                # RV below mean
+
+        - field: "macro_stress"
+          operator: "<"
+          value: 40                   # Macro stress < 40
+
+        - field: "funding_zscore"
+          operator: "<"
+          value: 2.0                  # Not overcrowded
+
+        - field: "btc_spx_correlation"
+          operator: ">"
+          value: 0.3                  # Positive correlation with risk assets
+
+      key_drivers:
+        - "price_trend"
+        - "low_volatility"
+        - "macro_calm"
+
+    # Regime 2: RISK_OFF_STRESS
+    RISK_OFF_STRESS:
+      primary_condition:
+        field: "macro_stress"
+        operator: ">="
+        value: 60                     # High macro stress
+
+      additional_conditions:
+        - field: "btc_trend"
+          operator: "<"
+          value: 0                    # Negative price trend
+
+        - field: "vix"
+          operator: ">"
+          value: 25                   # Elevated VIX
+
+        - field: "btc_spx_correlation"
+          operator: ">"
+          value: 0.5                  # High correlation (risk-off)
+
+        - field: "dxy_momentum"
+          operator: ">"
+          value: 0                    # DXY strengthening
+
+      key_drivers:
+        - "macro_stress"
+        - "equity_weakness"
+        - "safe_haven_flows"
+
+    # Regime 3: CHOP_RANGE
+    CHOP_RANGE:
+      primary_condition:
+        field: "price_range"
+        operator: "tight"
+        value: true                   # Price in tight range
+
+      additional_conditions:
+        - field: "volatility_regime"
+          operator: "=="
+          value: "low"
+
+        - field: "volume_zscore"
+          operator: "<"
+          value: 0.5                  # Below-average volume
+
+        - field: "breakout_flags"
+          operator: "all_false"
+          value: true                 # No breakouts
+
+      key_drivers:
+        - "tight_range"
+        - "low_volume"
+        - "no_directional_conviction"
+
+    # Regime 4: VOL_EXPANSION
+    VOL_EXPANSION:
+      primary_condition:
+        field: "rv_4h_zscore"
+        operator: ">="
+        value: 2.0                    # Volatility spike
+
+      additional_conditions:
+        - field: "volume_zscore"
+          operator: ">"
+          value: 1.0                  # Elevated volume
+
+        - field: "candle_size"
+          operator: ">"
+          value: 1.5                  # Large candles (> 1.5x ATR)
+
+        - field: "vix"
+          operator: ">"
+          value: 20                   # Elevated market volatility
+
+      key_drivers:
+        - "volatility_spike"
+        - "volume_surge"
+        - "large_moves"
+
+    # Regime 5: DELEVERAGING
+    DELEVERAGING:
+      primary_condition:
+        field: "liquidations_1h_usd"
+        operator: ">="
+        value: 50000000               # $50M+ in 1h liquidations
+
+      additional_conditions:
+        - field: "oi_drop_1h"
+          operator: ">="
+          value: 0.05                 # 5%+ OI drop
+
+        - field: "funding_zscore"
+          operator: ">"
+          value: 2.0                  # Elevated funding before cascade
+
+        - field: "candle_size"
+          operator: ">"
+          value: 2.0                  # Large directional moves
+
+      key_drivers:
+        - "liquidation_cascade"
+        - "oi_collapse"
+        - "forced_deleveraging"
+
+  # On-chain contribution to regime (never sets regime alone)
+  onchain_influence:
+    max_weight: 0.2                   # On-chain can add up to 20% confidence
+    never_primary: true               # On-chain cannot be primary driver
+
+# =============================================================================
+# COOLDOWN REGISTRY CONFIGURATION
+# Per-alert type cooldown settings
+# =============================================================================
+cooldowns:
+  # Global settings
+  global:
+    cleanup_interval: 300             # Clean expired cooldowns every 5 min
+    max_registry_size: 10000          # Max cooldown entries before cleanup
+
+  # Per-alert type cooldowns (in minutes)
+  per_alert_type:
+    VOL_EXPANSION: 30
+    LEADERSHIP_ROTATION: 120
+    BREAKOUT: 60
+    REGIME_SHIFT: 90
+    CORRELATION_BREAK: 120
+
+# =============================================================================
+# PERSISTENCE SETTINGS
+# How many consecutive cycles conditions must hold before firing
+# =============================================================================
+persistence:
+  # Global settings
+  global:
+    cycle_interval: 300               # 5 minutes (in seconds)
+
+  # Per-alert type persistence requirements
+  per_alert_type:
+    VOL_EXPANSION: 2                  # 2 cycles = 10 minutes
+    LEADERSHIP_ROTATION: 2            # 2 cycles = 10 minutes
+    BREAKOUT: 2                       # 2 cycles = 10 minutes
+    REGIME_SHIFT: 1                   # No persistence (regime is cycle output)
+    CORRELATION_BREAK: 2              # 2 cycles = 10 minutes
+
+# =============================================================================
+# ALERT FREQUENCY TARGETS
+# Target < 10 alerts/day average per spec Section 1.3
+# =============================================================================
+alert_frequency:
+  target_alerts_per_day: 10           # Average target
+  max_alerts_per_hour: 5              # Circuit breaker for alert storm
+  evaluation_window_days: 7           # Rolling window for frequency calculation
+
+# =============================================================================
+# FEATURE COMPUTATION PARAMETERS
+# Used by feature engine for indicator calculation
+# =============================================================================
+feature_params:
+  # Technical indicators
+  rsi_period: 14
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  bollinger_period: 20
+  bollinger_std: 2.0
+  atr_period: 14
+
+  # Volatility
+  rv_window_1h: 12                    # 12x 5m candles
+  rv_window_4h: 48                    # 48x 5m candles
+
+  # Volume z-score
+  volume_zscore_window: 288           # 24 hours of 5m candles
+
+  # Relative strength
+  rs_lookback: 20                     # 20 periods for RS calculation
+  rs_zscore_window: 60                # 60 periods for z-score
+
+  # Breakout detection
+  breakout_4h_window: 48              # 4 hours of 5m candles
+  breakout_24h_window: 288            # 24 hours of 5m candles
+
+  # Correlation windows
+  correlation_30d_window: 30          # 30 days
+  correlation_7d_window: 7            # 7 days
+
+# =============================================================================
+# MACRO STRESS COMPOSITE WEIGHTS
+# Weights for macro stress calculation (0-100 scale)
+# =============================================================================
+macro_stress:
+  # Component weights (must sum to 1.0)
+  weights:
+    vix_level: 0.35                   # VIX normalized to 0-100
+    yield_curve: 0.25                 # 2Y-10Y spread (inverted = stress)
+    dxy_momentum: 0.20                # DXY rate of change
+    equity_drawdown: 0.20             # SPX drawdown from recent high
+
+  # Normalization bounds
+  normalization:
+    vix:
+      min: 10                         # VIX = 10 → stress = 0
+      max: 40                         # VIX = 40 → stress = 100
+
+    yield_curve_spread:
+      positive: 0                     # Normal curve → stress = 0
+      inverted: 100                   # Inverted curve → stress = 100
+
+    dxy_momentum:
+      min: -5                         # -5% → stress = 0
+      max: 5                          # +5% → stress = 100
+
+    equity_drawdown:
+      min: 0                          # 0% drawdown → stress = 0
+      max: 20                         # 20% drawdown → stress = 100
+
+# =============================================================================
+# PHASE 1-2 ONLY NOTE
+# =============================================================================
+# Additional thresholds for Phase 3-4 alerts will be added in F-5b:
+# - CROWDED_LEVERAGE (Phase 3: derivatives)
+# - DELEVERAGING_EVENT (Phase 3: derivatives)
+# - EXCHANGE_INFLOW_RISK (Phase 4: on-chain)
+# - NETFLOW_SHIFT (Phase 4: on-chain)
+# - Risk score weights
+# - Confirmation requirements for on-chain alerts
