@@ -309,7 +309,7 @@ Created a modular, validated configuration system with three YAML files and a Py
 
 **Service Skeletons:**
 - **collector/** (Rust): Cargo.toml with async-nats 0.38, tokio 1.42, tokio-tungstenite 0.26, serde, tracing. Multi-stage Dockerfile for optimized builds
-- **processor/** (Python): NATS-to-TimescaleDB normalizer with asyncio-nats-client, psycopg3, structlog
+- **processor/** (Python): NATS-to-TimescaleDB normalizer with nats-py, psycopg3, structlog
 - **analyzer/** (Python): Feature engine + regime + alerts with pandas, numpy, ta library, pyyaml for config loading
 - **bot/** (Python): Discord bot with discord.py 2.3, anthropic SDK 0.40+ for LLM integration
 - **api/** (Python): FastAPI REST API with uvicorn standard server
@@ -335,6 +335,40 @@ Created a modular, validated configuration system with three YAML files and a Py
 - Dashboard uses nginx in production Dockerfile for static file serving
 - All Python services use python:3.11-slim base image for consistency
 - Analyzer service mounts configs/ directory read-only for threshold access
+
+**Phase 0 Gate Verification Fixes (2026-02-16):**
+
+During Phase 0 gate verification (`docker-compose up` full test), encountered and fixed the following issues:
+
+**Fix 1: Docker Build Context Issue**
+- **Problem:** analyzer/Dockerfile had `COPY ../configs /app/configs` which failed because Docker build context cannot access parent directories
+- **Solution:** Removed the invalid COPY command from analyzer/Dockerfile:19 - configs are already mounted as read-only volumes in docker-compose.yml
+- **Files:** analyzer/Dockerfile
+
+**Fix 2: NATS Package Name Correction**
+- **Problem:** All Python services used non-existent package `asyncio-nats-client>=2.9.0` (latest version is 0.11.5)
+- **Solution:** Updated all pyproject.toml files to use correct modern NATS package: `nats-py>=2.9.0`
+- **Files:** analyzer/pyproject.toml, processor/pyproject.toml, bot/pyproject.toml
+
+**Fix 3: Migrations Path Update**
+- **Problem:** database/run_migrations.py still referenced old path `database/migrations` after F-6 reorganization
+- **Solution:** Updated path to new location `schema/migrations` in run_migrations.py:156
+- **Files:** database/run_migrations.py
+
+**Rust Collector Note:**
+- Rust collector has unresolved dependency issue: transitive dependency `time-core-0.1.8` requires edition2024 which isn't stable in Cargo 1.84.1
+- This is non-blocking for Phase 0 since collector skeleton exists and will be properly implemented in DI-1 (Binance WebSocket Collector)
+- Deferred proper fix to DI-1 when implementing actual collector functionality
+
+**Verification Results:**
+- ✅ All infrastructure services healthy (TimescaleDB, Redis, NATS)
+- ✅ All Python services build and run successfully
+- ✅ Migrations applied successfully: 10 migrations, 9 hypertables, 2 CAGGs
+- ✅ Config loader tests: 17/17 passing
+- ✅ Schema tests: 14/14 passing
+- ✅ API responding at http://localhost:8000
+
+**Branch:** romain/fix-phase0-gate-issues
 
 ---
 
