@@ -119,6 +119,58 @@ Before creating a PR, verify:
 - [ ] `make smoke` still passes (once QA-1 exists)
 - [ ] Degradation paths still work if this changes data flow
 
+### 2.5 Linear Integration Workflow
+
+Every task follows a strict Linear status progression tied to git workflow stages:
+
+#### Status Progression
+
+1. **Task Started** → Update Linear to **"In Progress"**
+   - When: Immediately after creating the task branch and beginning work
+   - Action: `mcp__linear-server__update_issue` with `state: "In Progress"`
+
+2. **PR Created** → Update Linear to **"In Review"**
+   - When: After creating the pull request (locally or on GitHub)
+   - Action: `mcp__linear-server__update_issue` with `state: "In Review"`
+
+3. **PR Merged** → Update Linear to **"Done"**
+   - When: After PR is merged to main (with explicit user confirmation)
+   - Action: `mcp__linear-server__update_issue` with `state: "Done"`
+
+#### Available Linear Statuses
+- **Backlog** (unstarted) — Default state for all tasks
+- **Todo** (unstarted) — Ready to start
+- **In Progress** (started) — Work in progress, branch created
+- **In Review** (started) — PR created, awaiting review
+- **Done** (completed) — PR merged, task complete
+- **Canceled** (canceled) — Task abandoned
+- **Duplicate** (canceled) — Duplicate of another task
+
+#### Workflow Example
+
+```bash
+# 1. Start F-3 task
+git checkout -b romain/f-3-docker-compose-setup
+# → Update SOLO-24 to "In Progress"
+
+# 2. Complete work and commit
+git commit -m "F-3: Add docker-compose with TimescaleDB, Redis, NATS"
+
+# 3. Create PR (ask user first)
+gh pr create --title "F-3: Docker Compose Infrastructure Setup" ...
+# → Update SOLO-24 to "In Review"
+
+# 4. Merge PR (after user approval)
+gh pr merge
+# → Update SOLO-24 to "Done"
+```
+
+#### Rules
+- **Never skip status updates.** Every task must progress through these states.
+- **Always update status immediately** after the triggering action (branch creation, PR creation, merge).
+- **Never mark a task "Done"** until the PR is actually merged to main.
+- **If a task is abandoned mid-work**, update to "Canceled" with a comment explaining why.
+
 ---
 
 ## 3. Code Standards
