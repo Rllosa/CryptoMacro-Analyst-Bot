@@ -435,7 +435,15 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 **Dependencies:** F-3, F-6, F-7
 
-**Implementation Notes:** Use tokio + tungstenite. One task per symbol stream. Reconnect with exponential backoff.
+**Implementation Notes (2026-02-17):**
+
+- **Binary + lib.rs pattern:** Added `src/lib.rs` re-exporting all public modules so `tests/integration.rs` can import crate types (`cryptomacro_collector::models::*`). Required because Rust integration tests can only import library crates, not binaries.
+- **TLS: `rustls-tls-native-roots` over `native-tls`:** Pure-Rust TLS avoids an OpenSSL build dependency in the `rust:1.85-slim` Docker image.
+- **`time = "=0.3.36"` pin in Cargo.toml:** `async-nats 0.38` pulls `time` transitively. Versions ≥ 0.3.37 require rustc 1.88.0 due to edition2024 changes; Docker image ships rust:1.85. Since `Cargo.lock` is gitignored, the pin must live in `Cargo.toml`.
+- **Dockerfile: `rust:1.84-slim` → `rust:1.85-slim`:** Resolves `time-core` edition2024 build failure that was flagged as a blocker in F-6/SOLO-28.
+- **Publish every tick, not just closed candles:** The feature engine benefits from in-progress candle updates. The `is_closed` flag is logged at DEBUG so downstream can filter.
+- **Heartbeat: warn-and-continue:** Timeout logs WARNING but does not force-disconnect. Binance maintenance windows can cause short silences; a reconnect would just re-open and hit the same silence.
+- **15 tests total:** 10 unit tests (models, config, collector modules) + 5 integration tests replaying DI-0 JSONL fixtures. `cargo clippy -- -D warnings` and `cargo fmt --check` both pass.
 
 **Requirements:**
 - Connect to `wss://fstream.binance.com` for `btcusdt`, `ethusdt`, `solusdt`, `hypeusdt`
