@@ -15,9 +15,6 @@ COPY src ./src
 # Install dependencies
 RUN pip install --no-cache-dir -e .
 
-# Copy configs (needed for thresholds)
-COPY ../configs /app/configs
-
 ENV PYTHONUNBUFFERED=1
 
 CMD ["python", "src/main.py"]
