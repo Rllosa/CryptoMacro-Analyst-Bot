@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Optional
 
@@ -9,13 +10,11 @@ from psycopg_pool import AsyncConnectionPool
 
 log = structlog.get_logger()
 
-# Parameterized upsert — ON CONFLICT DO NOTHING deduplicates by (time, symbol, timeframe)
-_INSERT_SQL = """
-    INSERT INTO market_candles
-        (time, symbol, timeframe, open, high, low, close, volume, quote_volume, num_trades)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    ON CONFLICT (time, symbol, timeframe) DO NOTHING
-"""
+# Number of columns in the INSERT — must match the tuple returned by CandleMessage.to_db_row()
+_NCOLS = 10
+_INSERT_COLS = "(time, symbol, timeframe, open, high, low, close, volume, quote_volume, num_trades)"
+# Pre-built per-row placeholder string — computed once at import time, reused for every batch
+_ROW_PH = "({})".format(", ".join(["%s"] * _NCOLS))
 
 
 async def create_pool(dsn: str, min_size: int = 2, max_size: int = 5) -> AsyncConnectionPool:
@@ -46,16 +45,25 @@ async def create_pool_with_retry(dsn: str, max_retries: int = 10) -> AsyncConnec
     raise RuntimeError(f"Could not connect to TimescaleDB after {max_retries} attempts")
 
 
-async def upsert_candles(pool: AsyncConnectionPool, rows: list[tuple]) -> int:
+async def upsert_candles(pool: AsyncConnectionPool, rows: Sequence[tuple]) -> int:
     """
-    Batch-upsert candle rows into market_candles.
+    Batch-upsert candle rows into market_candles using a single multi-row INSERT.
+
+    One DB round trip regardless of batch size — faster than executemany's N statements.
     Duplicates are silently ignored (ON CONFLICT DO NOTHING).
     Returns the number of rows attempted.
     """
     if not rows:
         return 0
+    # Build single VALUES clause: (%s,...), (%s,...), ... — one parse + one execute on the server
+    query = (
+        f"INSERT INTO market_candles {_INSERT_COLS} "
+        f"VALUES {', '.join(_ROW_PH for _ in rows)} "
+        "ON CONFLICT (time, symbol, timeframe) DO NOTHING"
+    )
+    flat = [v for row in rows for v in row]
     async with pool.connection() as conn:
-        await conn.executemany(_INSERT_SQL, rows)
+        await conn.execute(query, flat)
     return len(rows)
 
 

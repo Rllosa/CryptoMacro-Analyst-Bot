@@ -39,8 +39,13 @@ async def run_backfill(settings: Settings, pool: AsyncConnectionPool) -> None:
     gap_threshold = timedelta(minutes=settings.gap_threshold_minutes)
 
     async with aiohttp.ClientSession() as session:
-        for symbol in SYMBOLS:
-            await _backfill_symbol(settings, pool, session, symbol, now, gap_threshold)
+        # All symbols run concurrently — DB queries and HTTP pages overlap instead of serialising
+        await asyncio.gather(
+            *(
+                _backfill_symbol(settings, pool, session, symbol, now, gap_threshold)
+                for symbol in SYMBOLS
+            )
+        )
 
 
 async def _backfill_symbol(
