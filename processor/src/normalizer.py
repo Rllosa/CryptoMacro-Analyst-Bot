@@ -125,12 +125,12 @@ class Normalizer:
         Messages are NOT acked on DB failure — JetStream will redeliver
         them after ack_wait expires, providing at-least-once delivery.
         """
-        rows = [row for _, row in batch]
-        msgs = [msg for msg, _ in batch]
+        # Single-pass unzip — batch is always non-empty here
+        msgs, rows = zip(*batch)
         try:
             attempted = await upsert_candles(self._pool, rows)
-            for msg in msgs:
-                await msg.ack()
+            # Fire all acks concurrently — no reason to serialize them
+            await asyncio.gather(*(msg.ack() for msg in msgs))
             log.info("normalizer.flushed", attempted=attempted, batch_size=len(rows))
         except Exception as exc:
             # Do not ack — JetStream will redeliver after ack_wait expires

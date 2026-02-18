@@ -133,8 +133,7 @@ async def _fetch_klines(
         if not data:
             break
 
-        for kline in data:
-            rows.append(_kline_to_row(symbol, kline))
+        rows.extend(_kline_to_row(symbol, kline) for kline in data)
 
         # Advance start past the last returned candle to avoid re-fetching
         current_start_ms = int(data[-1][_IDX_OPEN_TIME]) + 60_000
