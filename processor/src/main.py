@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-CryptoMacro Analyst Bot — NATS-to-TimescaleDB Normalizer
-Phase 1 (Weeks 1-2) — DI-2
+CryptoMacro Analyst Bot — Processor Service
+Phase 1 (Weeks 1-2) — DI-2, FE-1
 
-Entry point: loads config, runs backfill on startup, then subscribes to
-NATS JetStream and persists candle messages to TimescaleDB in batches.
+Entry point: loads config, runs backfill on startup, then runs the
+NATS-to-TimescaleDB normalizer and the 5-minute feature engine concurrently.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import signal
 import sys
 from pathlib import Path
 
+import redis.asyncio as aioredis
 import structlog
 
 # Ensure src/ is on the path when run directly (must come before local imports)
@@ -22,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from backfill import run_backfill  # noqa: E402
 from config import Settings  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
+from features.engine import FeatureEngine  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
 
 log = structlog.get_logger()
@@ -46,8 +48,9 @@ def _configure_logging() -> None:
 
 async def main() -> None:
     """
-    Service entry point: configure logging, connect to TimescaleDB, run startup
-    backfill, then run the Normalizer until a shutdown signal is received.
+    Service entry point: configure logging, connect to TimescaleDB and Redis,
+    run startup backfill, then run the Normalizer and FeatureEngine concurrently
+    until a shutdown signal is received.
     """
     _configure_logging()
 
@@ -58,6 +61,10 @@ async def main() -> None:
     pool = await create_pool_with_retry(settings.db_dsn)
     log.info("processor.db_connected")
 
+    # Connect to Redis for feature caching
+    redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)
+    log.info("processor.redis_connected")
+
     # Gap backfill on startup — fetch any missing 1m candles from Binance REST
     try:
         await run_backfill(settings, pool)
@@ -65,20 +72,23 @@ async def main() -> None:
         log.warning("processor.backfill_failed", error=str(exc))
 
     normalizer = Normalizer(settings, pool)
+    feature_engine = FeatureEngine(settings, pool, redis_client)
 
-    # Graceful shutdown on SIGTERM / SIGINT
+    # Graceful shutdown on SIGTERM / SIGINT — propagate to both workers
     loop = asyncio.get_running_loop()
 
     def _handle_signal() -> None:
         log.info("processor.shutdown_requested")
         normalizer.request_shutdown()
+        feature_engine.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
 
     log.info("processor.running")
-    await normalizer.run()
+    await asyncio.gather(normalizer.run(), feature_engine.run())
 
+    await redis_client.aclose()
     await pool.close()
     log.info("processor.stopped")
 
