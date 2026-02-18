@@ -274,6 +274,39 @@ partitioning - the time column must be part of any unique constraint.
 - **No raw string interpolation in queries.** Always use parameterized queries (`$1`, `$2` for asyncpg; `%s` for psycopg). This is a security requirement.
 - **Indexes:** Every time-series query pattern must have a supporting index. Verify with `EXPLAIN ANALYZE` before marking a query as "fast enough."
 
+### 3.6 Performance & Optimization Mandate
+
+This system processes high-frequency real-time data. Every loop, allocation, and I/O call in the hot path must be justified. Apply these rules before writing any data-processing code — they are non-negotiable defaults, not suggestions.
+
+#### Iteration — Never Iterate a Collection More Than Once
+
+- **One pass, always.** If you need two things from the same collection, extract them in a single pass. In Python use `zip(*pairs)` to unzip; in Rust use `.unzip()` or a single `.fold()`. Two comprehensions or two loops over the same data is a bug.
+- **Never `append` inside a `for` loop.** Use `list.extend(f(x) for x in items)` — `extend` drives the iteration in C, avoiding Python-level attribute re-lookup on every element. For Rust, build via `.map().collect()` instead of pushing in a loop.
+- **Generator expressions over list comprehensions** when the result is consumed exactly once (e.g., as an argument to `asyncio.gather`, `str.join`, or `sum`). This skips materializing an intermediate list entirely.
+- **Pre-build every constant at module/import level**, not inside functions. SQL placeholder strings, fixed tuples, compiled regexes — anything that does not change at runtime must not be reconstructed on every call. One allocation at startup, zero in the hot path.
+
+#### I/O — One Round Trip Per Batch
+
+- **Single multi-row `INSERT VALUES (...), (...), ...` over `executemany`.** `executemany` sends N separate SQL statements even in pipeline mode. One multi-row INSERT is one server parse + one execute regardless of batch size. Build the flat parameter list with a single list comprehension and the placeholder string by joining a pre-built per-row constant.
+- **Never loop-`await` when `asyncio.gather` works.** Awaiting in a loop serializes operations that are inherently concurrent. Acks, symbol queries, independent HTTP fetches — all must be gathered. Cost: `O(1)` wall-clock instead of `O(N)`.
+- **All independent I/O fan-out is concurrent by default.** Querying N symbols, N endpoints, or N services whose results don't depend on each other: use `asyncio.gather` (Python) or `tokio::join!` / `FuturesUnordered` (Rust). Sequential fan-out is always wrong here.
+
+#### Constant Hoisting
+
+- **Hoist every loop-invariant computation above the loop.** String formatting, object construction, repeated attribute access — if the value doesn't change across iterations, compute it once before the loop starts and reference the variable inside.
+- **Review every function that is called inside a loop.** If it rebuilds a string, allocates a collection, or computes a constant, move that work out of the loop.
+
+#### Verification
+
+- Before submitting any PR that touches data-processing code, answer these questions:
+  1. Does any loop iterate a collection that another loop already iterated? → Merge them.
+  2. Does any function rebuild a constant on every call? → Hoist to module level.
+  3. Does any I/O fan-out `await` in a loop? → Convert to `asyncio.gather`.
+  4. Does any batch DB write use `executemany` or per-row `execute`? → Replace with single multi-row INSERT.
+- Profile with `py-spy` (Python) or `cargo flamegraph` (Rust) before doing anything more exotic than the rules above.
+
+---
+
 ### 3.5 YAML (Configuration)
 - **Comments required** for every non-obvious parameter explaining: what it controls, valid range, units.
 - **No anchors/aliases** (`&` / `*`) — keep configs flat and readable.
@@ -511,6 +544,11 @@ Each service owns its directory and does not import from other services:
 - ❌ Ship alert code without deterministic test vectors
 - ❌ Use `any` in TypeScript without a justifying comment
 - ❌ Use `.unwrap()` in production Rust code
+- ❌ Iterate the same collection more than once when one pass suffices
+- ❌ Use `append` in a loop when `extend` with a generator works
+- ❌ `await` in a loop when `asyncio.gather` / `tokio::join!` works
+- ❌ Use `executemany` or per-row `execute` for batch DB writes — use single multi-row INSERT
+- ❌ Rebuild constants (SQL placeholders, format strings, fixed collections) inside functions — hoist to module level
 - ❌ Leave `TODO` comments without a task ID
 - ❌ Create Redis keys without a TTL
 
