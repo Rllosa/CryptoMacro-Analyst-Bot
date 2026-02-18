@@ -364,6 +364,9 @@ feature_params:
   rs_lookback: 20                     # 20 periods for RS calculation
   rs_zscore_window: 60                # 60 periods for z-score
 
+  # EMA slope
+  ema_slope_period: 20                # Period for EMA slope computation
+
   # Breakout detection
   breakout_4h_window: 48              # 4 hours of 5m candles
   breakout_24h_window: 288            # 24 hours of 5m candles

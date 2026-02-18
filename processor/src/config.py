@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # Binance REST (for gap backfill)
     binance_rest_base: str = Field(default="https://fapi.binance.com", alias="BINANCE_REST_BASE")
 
+    # Redis (for feature caching)
+    redis_url: str = Field(default="redis://redis:6379/0", alias="REDIS_URL")
+
+    # Feature engine
+    thresholds_path: str = Field(default="/app/configs/thresholds.yaml", alias="THRESHOLDS_PATH")
+    feature_interval_secs: int = Field(default=300, alias="FEATURE_INTERVAL_SECS")
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
