@@ -20,6 +20,7 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
+    /// Create a new Supervisor with the shared config and NATS client.
     pub fn new(config: Arc<Config>, nats: Arc<NatsClient>) -> Self {
         Supervisor { config, nats }
     }

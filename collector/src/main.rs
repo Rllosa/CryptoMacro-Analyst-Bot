@@ -15,6 +15,8 @@ use cryptomacro_collector::config::Config;
 use cryptomacro_collector::nats_client::NatsClient;
 use cryptomacro_collector::supervisor::Supervisor;
 
+/// Entry point: initialises logging, loads config, connects to NATS, spawns per-symbol
+/// collector tasks, and waits for SIGTERM/SIGINT before draining all tasks.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Load .env file — silently ignored if absent (production uses real env vars)

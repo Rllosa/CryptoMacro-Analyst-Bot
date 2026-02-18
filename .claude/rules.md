@@ -225,25 +225,34 @@ partitioning - the time column must be part of any unique constraint.
 ### 3.1 Rust (Collector Service)
 - **Edition:** 2021+
 - **Async runtime:** tokio (multi-threaded)
-- **Error handling:** Use `anyhow` for application errors, `thiserror` for library errors. No `.unwrap()` in production code — use `.expect("descriptive message")` only where panic is truly impossible, or propagate with `?`.
+- **Error handling:** Use `anyhow` for application errors, `thiserror` for library errors. No `.unwrap()` in production code — use `.expect("descriptive message")` only where panic is truly impossible, or propagate with `?`. Error messages must be descriptive enough to diagnose the root cause without a debugger.
 - **Logging:** `tracing` crate with structured JSON output. Every log line must include: timestamp, level, service name, and relevant context (symbol, message type, etc.).
 - **Naming:** snake_case for functions/variables, PascalCase for types/structs, SCREAMING_SNAKE_CASE for constants.
 - **Dependencies:** Pin exact versions in `Cargo.toml` for reproducible builds.
 - **Formatting:** `cargo fmt` before every commit. `cargo clippy -- -D warnings` must pass with zero warnings.
-- **Tests:** `#[cfg(test)]` modules in the same file for unit tests. Integration tests in `tests/` directory.
+- **Tests:** `#[cfg(test)]` modules in the same file for unit tests. Integration tests in `tests/` directory. All public functions must have unit tests.
+- **Documentation:** Document all public APIs with doc comments (`///`). Include: what it does, panics (if any), and an example for non-trivial functions.
+- **Thread safety:** Share state across tasks using `Arc<Mutex<T>>` or `Arc<RwLock<T>>`. Prefer `RwLock` when reads dominate. Never use raw pointers for shared state. Document which fields require synchronization and why.
+- **Feature flags:** Use `#[cfg(feature = "...")]` to gate optional or environment-specific code. Never conditionally compile core pipeline logic — only supplementary tooling (e.g., benchmarks, dev utilities).
+- **Performance:** This service processes high-frequency tick data. Prefer zero-copy parsing where possible (e.g., `&str` over `String` for parsing). Avoid heap allocation in the hot path. Profile with `perf` or `cargo flamegraph` before optimizing. Benchmark critical paths with `criterion`.
+- **Channels:** Use `tokio::sync::mpsc` for producer→consumer pipelines. Size channel buffers explicitly — unbounded channels are forbidden in the hot path (they hide backpressure). Log a warning when a channel fills above 80% capacity.
 
 ### 3.2 Python (Processor, Analyzer, Bot, API, Eval)
 - **Version:** 3.11+
 - **Type hints:** Required on all function signatures. Use `from __future__ import annotations` for forward references.
-- **Error handling:** Never bare `except:`. Always catch specific exceptions. Log the exception with traceback before re-raising or degrading.
+- **Error handling:** Never bare `except:`. Always catch specific exceptions. Log the exception with traceback before re-raising or degrading. Error messages must be descriptive enough to diagnose the root cause without a debugger.
 - **Logging:** `structlog` with JSON output. Same structured format as Rust: timestamp, level, service, context.
 - **Naming:** snake_case for functions/variables/modules, PascalCase for classes, UPPER_SNAKE_CASE for constants.
 - **Imports:** stdlib → third-party → local, separated by blank lines. No wildcard imports (`from x import *`).
 - **Formatting:** `ruff format` before every commit. `ruff check` must pass with zero errors.
 - **Async:** Use `asyncio` for I/O-bound services (normalizer, API, bot). Feature engine and alert engine can be synchronous if simpler.
 - **Dependencies:** Pin versions in `requirements.txt` or `pyproject.toml`. Use `pip install --break-system-packages` in Docker only.
-- **Tests:** `pytest` with fixtures. Test files mirror source structure: `processor/alerts/vol_expansion.py` → `tests/processor/alerts/test_vol_expansion.py`.
+- **Tests:** `pytest` with fixtures. Test files mirror source structure: `processor/alerts/vol_expansion.py` → `tests/processor/alerts/test_vol_expansion.py`. All public functions must have unit tests.
+- **Documentation:** Document all public functions and classes with docstrings. Include: what it does, args, return value, and raised exceptions for any non-trivial function.
 - **No ORM for TimescaleDB.** Use raw SQL via `asyncpg` or `psycopg`. TimescaleDB-specific features (hypertables, continuous aggregates, compression) don't map well to ORMs.
+- **Performance:** This service processes high-frequency candle data. Prefer `list` batch operations over per-message DB calls. Avoid blocking calls inside `async` functions — use `asyncio.to_thread()` for CPU-bound work. Profile hot paths with `cProfile` or `py-spy` before optimizing. Prefer `tuple` over `dict` for fixed-schema DB rows (lower memory, faster iteration).
+- **Memory:** Avoid accumulating unbounded in-memory collections. Batch buffers must have both a size cap and a timeout flush. Generator expressions over list comprehensions when the result is consumed once and the dataset is large.
+- **Concurrency:** Use `asyncio.gather()` for concurrent I/O fan-out (e.g., querying multiple symbols). Limit concurrency with `asyncio.Semaphore` when hitting rate-limited external APIs. Never use `threading` alongside `asyncio` unless wrapping a blocking library via `asyncio.to_thread()`.
 
 ### 3.3 React / TypeScript (Dashboard)
 - **Framework:** React 18+ with Vite
@@ -264,6 +273,39 @@ partitioning - the time column must be part of any unique constraint.
 - **Migrations:** Numbered sequentially (`001_create_market_candles.sql`, `002_create_derivatives_metrics.sql`). Each migration is idempotent (use `IF NOT EXISTS`).
 - **No raw string interpolation in queries.** Always use parameterized queries (`$1`, `$2` for asyncpg; `%s` for psycopg). This is a security requirement.
 - **Indexes:** Every time-series query pattern must have a supporting index. Verify with `EXPLAIN ANALYZE` before marking a query as "fast enough."
+
+### 3.6 Performance & Optimization Mandate
+
+This system processes high-frequency real-time data. Every loop, allocation, and I/O call in the hot path must be justified. Apply these rules before writing any data-processing code — they are non-negotiable defaults, not suggestions.
+
+#### Iteration — Never Iterate a Collection More Than Once
+
+- **One pass, always.** If you need two things from the same collection, extract them in a single pass. In Python use `zip(*pairs)` to unzip; in Rust use `.unzip()` or a single `.fold()`. Two comprehensions or two loops over the same data is a bug.
+- **Never `append` inside a `for` loop.** Use `list.extend(f(x) for x in items)` — `extend` drives the iteration in C, avoiding Python-level attribute re-lookup on every element. For Rust, build via `.map().collect()` instead of pushing in a loop.
+- **Generator expressions over list comprehensions** when the result is consumed exactly once (e.g., as an argument to `asyncio.gather`, `str.join`, or `sum`). This skips materializing an intermediate list entirely.
+- **Pre-build every constant at module/import level**, not inside functions. SQL placeholder strings, fixed tuples, compiled regexes — anything that does not change at runtime must not be reconstructed on every call. One allocation at startup, zero in the hot path.
+
+#### I/O — One Round Trip Per Batch
+
+- **Single multi-row `INSERT VALUES (...), (...), ...` over `executemany`.** `executemany` sends N separate SQL statements even in pipeline mode. One multi-row INSERT is one server parse + one execute regardless of batch size. Build the flat parameter list with a single list comprehension and the placeholder string by joining a pre-built per-row constant.
+- **Never loop-`await` when `asyncio.gather` works.** Awaiting in a loop serializes operations that are inherently concurrent. Acks, symbol queries, independent HTTP fetches — all must be gathered. Cost: `O(1)` wall-clock instead of `O(N)`.
+- **All independent I/O fan-out is concurrent by default.** Querying N symbols, N endpoints, or N services whose results don't depend on each other: use `asyncio.gather` (Python) or `tokio::join!` / `FuturesUnordered` (Rust). Sequential fan-out is always wrong here.
+
+#### Constant Hoisting
+
+- **Hoist every loop-invariant computation above the loop.** String formatting, object construction, repeated attribute access — if the value doesn't change across iterations, compute it once before the loop starts and reference the variable inside.
+- **Review every function that is called inside a loop.** If it rebuilds a string, allocates a collection, or computes a constant, move that work out of the loop.
+
+#### Verification
+
+- Before submitting any PR that touches data-processing code, answer these questions:
+  1. Does any loop iterate a collection that another loop already iterated? → Merge them.
+  2. Does any function rebuild a constant on every call? → Hoist to module level.
+  3. Does any I/O fan-out `await` in a loop? → Convert to `asyncio.gather`.
+  4. Does any batch DB write use `executemany` or per-row `execute`? → Replace with single multi-row INSERT.
+- Profile with `py-spy` (Python) or `cargo flamegraph` (Rust) before doing anything more exotic than the rules above.
+
+---
 
 ### 3.5 YAML (Configuration)
 - **Comments required** for every non-obvious parameter explaining: what it controls, valid range, units.
@@ -502,6 +544,11 @@ Each service owns its directory and does not import from other services:
 - ❌ Ship alert code without deterministic test vectors
 - ❌ Use `any` in TypeScript without a justifying comment
 - ❌ Use `.unwrap()` in production Rust code
+- ❌ Iterate the same collection more than once when one pass suffices
+- ❌ Use `append` in a loop when `extend` with a generator works
+- ❌ `await` in a loop when `asyncio.gather` / `tokio::join!` works
+- ❌ Use `executemany` or per-row `execute` for batch DB writes — use single multi-row INSERT
+- ❌ Rebuild constants (SQL placeholders, format strings, fixed collections) inside functions — hoist to module level
 - ❌ Leave `TODO` comments without a task ID
 - ❌ Create Redis keys without a TTL
 

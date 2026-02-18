@@ -3,46 +3,84 @@
 CryptoMacro Analyst Bot — NATS-to-TimescaleDB Normalizer
 Phase 1 (Weeks 1-2) — DI-2
 
-Consumes candle messages from NATS JetStream (published by Rust collector)
-and persists them to TimescaleDB market_candles table with deduplication.
+Entry point: loads config, runs backfill on startup, then subscribes to
+NATS JetStream and persists candle messages to TimescaleDB in batches.
 """
 
+from __future__ import annotations
+
 import asyncio
-import logging
+import signal
 import sys
 from pathlib import Path
 
-# Add src to path for local imports
+import structlog
+
+# Ensure src/ is on the path when run directly (must come before local imports)
 sys.path.insert(0, str(Path(__file__).parent))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from backfill import run_backfill  # noqa: E402
+from config import Settings  # noqa: E402
+from db import create_pool_with_retry  # noqa: E402
+from normalizer import Normalizer  # noqa: E402
+
+log = structlog.get_logger()
+
+
+def _configure_logging() -> None:
+    """Configure structlog for JSON output to stdout with ISO timestamps and log level filtering."""
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.add_logger_name,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(20),  # INFO
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
 
 
 async def main() -> None:
-    """Main entry point for processor service."""
-    logger.info("CryptoMacro Processor starting...")
+    """
+    Service entry point: configure logging, connect to TimescaleDB, run startup
+    backfill, then run the Normalizer until a shutdown signal is received.
+    """
+    _configure_logging()
 
-    # TODO (DI-2): Load configuration from .env
-    # TODO (DI-2): Connect to NATS JetStream
-    # TODO (DI-2): Subscribe to market.candles.* subjects
-    # TODO (DI-2): Connect to TimescaleDB
-    # TODO (DI-2): Implement batch insert with deduplication
-    # TODO (DI-2): Implement gap detection and backfill logic
-    # TODO (DI-2): Health check and graceful shutdown
+    settings = Settings()
+    log.info("processor.starting", nats_url=settings.nats_url, postgres_host=settings.postgres_host)
 
-    logger.info("Processor initialized (skeleton mode - no-op)")
+    # Connect to TimescaleDB with exponential-backoff retry
+    pool = await create_pool_with_retry(settings.db_dsn)
+    log.info("processor.db_connected")
 
-    # Keep service running
+    # Gap backfill on startup — fetch any missing 1m candles from Binance REST
     try:
-        while True:
-            await asyncio.sleep(60)
-            logger.info("Processor heartbeat (skeleton mode)")
-    except KeyboardInterrupt:
-        logger.info("Processor shutting down...")
+        await run_backfill(settings, pool)
+    except Exception as exc:
+        log.warning("processor.backfill_failed", error=str(exc))
+
+    normalizer = Normalizer(settings, pool)
+
+    # Graceful shutdown on SIGTERM / SIGINT
+    loop = asyncio.get_running_loop()
+
+    def _handle_signal() -> None:
+        log.info("processor.shutdown_requested")
+        normalizer.request_shutdown()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _handle_signal)
+
+    log.info("processor.running")
+    await normalizer.run()
+
+    await pool.close()
+    log.info("processor.stopped")
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Load configuration from environment variables, falling back to safe defaults for local dev.
     pub fn from_env() -> Self {
         Config {
             nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://nats:4222".to_string()),
