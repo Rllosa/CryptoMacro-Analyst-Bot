@@ -39,6 +39,7 @@ class CandleMessage(BaseModel):
     @field_validator("open", "high", "low", "close")
     @classmethod
     def price_must_be_positive(cls, v: float) -> float:
+        """Reject zero or negative prices — Binance never emits them; they indicate corrupt data."""
         if v <= 0:
             raise ValueError(f"price must be positive, got {v}")
         return v

@@ -5,6 +5,13 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    """
+    Runtime configuration for the processor service.
+
+    All fields are loaded from environment variables (or a .env file).
+    Aliases match the env var names used in docker-compose and .env.example.
+    """
+
     # NATS
     nats_url: str = Field(default="nats://nats:4222", alias="NATS_URL")
     nats_subject: str = Field(default="market.candles.>", alias="NATS_SUBJECT")
@@ -30,6 +37,7 @@ class Settings(BaseSettings):
 
     @property
     def db_dsn(self) -> str:
+        """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
         return (
             f"host={self.postgres_host} "
             f"port={self.postgres_port} "

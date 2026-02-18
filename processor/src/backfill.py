@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -50,6 +51,12 @@ async def _backfill_symbol(
     now: datetime,
     gap_threshold: timedelta,
 ) -> None:
+    """
+    Check for a data gap for one symbol and fetch missing candles if needed.
+
+    Queries the latest stored 1m candle time, compares it to `now`, and
+    fetches from Binance REST if the gap exceeds gap_threshold.
+    """
     last_time = await get_last_candle_time(pool, symbol)
 
     if last_time is None:
@@ -93,7 +100,9 @@ async def _fetch_klines(
 ) -> list[tuple]:
     """
     Fetch 1m klines from Binance Futures REST, paginating as needed.
-    Returns a list of DB-ready row tuples.
+
+    Returns a list of DB-ready row tuples. Stops pagination when Binance
+    returns fewer than the limit (last page) or on HTTP/network error.
     """
     url = f"{settings.binance_rest_base}/fapi/v1/klines"
     end_ms = int(end.timestamp() * 1000)
@@ -114,8 +123,11 @@ async def _fetch_klines(
             ) as resp:
                 resp.raise_for_status()
                 data: list[list] = await resp.json()
-        except Exception as exc:
-            log.error("backfill.fetch_failed", symbol=symbol, error=str(exc))
+        except aiohttp.ClientError as exc:
+            log.error("backfill.fetch_failed", symbol=symbol, url=url, error=str(exc))
+            break
+        except asyncio.TimeoutError:
+            log.error("backfill.fetch_timeout", symbol=symbol, url=url)
             break
 
         if not data:

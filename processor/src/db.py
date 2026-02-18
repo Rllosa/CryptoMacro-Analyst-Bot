@@ -43,7 +43,7 @@ async def create_pool_with_retry(dsn: str, max_retries: int = 10) -> AsyncConnec
                 retry_in_secs=delay,
             )
             await asyncio.sleep(delay)
-    raise RuntimeError("unreachable")
+    raise RuntimeError(f"Could not connect to TimescaleDB after {max_retries} attempts")
 
 
 async def upsert_candles(pool: AsyncConnectionPool, rows: list[tuple]) -> int:

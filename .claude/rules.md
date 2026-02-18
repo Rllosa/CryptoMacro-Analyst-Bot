@@ -225,25 +225,34 @@ partitioning - the time column must be part of any unique constraint.
 ### 3.1 Rust (Collector Service)
 - **Edition:** 2021+
 - **Async runtime:** tokio (multi-threaded)
-- **Error handling:** Use `anyhow` for application errors, `thiserror` for library errors. No `.unwrap()` in production code — use `.expect("descriptive message")` only where panic is truly impossible, or propagate with `?`.
+- **Error handling:** Use `anyhow` for application errors, `thiserror` for library errors. No `.unwrap()` in production code — use `.expect("descriptive message")` only where panic is truly impossible, or propagate with `?`. Error messages must be descriptive enough to diagnose the root cause without a debugger.
 - **Logging:** `tracing` crate with structured JSON output. Every log line must include: timestamp, level, service name, and relevant context (symbol, message type, etc.).
 - **Naming:** snake_case for functions/variables, PascalCase for types/structs, SCREAMING_SNAKE_CASE for constants.
 - **Dependencies:** Pin exact versions in `Cargo.toml` for reproducible builds.
 - **Formatting:** `cargo fmt` before every commit. `cargo clippy -- -D warnings` must pass with zero warnings.
-- **Tests:** `#[cfg(test)]` modules in the same file for unit tests. Integration tests in `tests/` directory.
+- **Tests:** `#[cfg(test)]` modules in the same file for unit tests. Integration tests in `tests/` directory. All public functions must have unit tests.
+- **Documentation:** Document all public APIs with doc comments (`///`). Include: what it does, panics (if any), and an example for non-trivial functions.
+- **Thread safety:** Share state across tasks using `Arc<Mutex<T>>` or `Arc<RwLock<T>>`. Prefer `RwLock` when reads dominate. Never use raw pointers for shared state. Document which fields require synchronization and why.
+- **Feature flags:** Use `#[cfg(feature = "...")]` to gate optional or environment-specific code. Never conditionally compile core pipeline logic — only supplementary tooling (e.g., benchmarks, dev utilities).
+- **Performance:** This service processes high-frequency tick data. Prefer zero-copy parsing where possible (e.g., `&str` over `String` for parsing). Avoid heap allocation in the hot path. Profile with `perf` or `cargo flamegraph` before optimizing. Benchmark critical paths with `criterion`.
+- **Channels:** Use `tokio::sync::mpsc` for producer→consumer pipelines. Size channel buffers explicitly — unbounded channels are forbidden in the hot path (they hide backpressure). Log a warning when a channel fills above 80% capacity.
 
 ### 3.2 Python (Processor, Analyzer, Bot, API, Eval)
 - **Version:** 3.11+
 - **Type hints:** Required on all function signatures. Use `from __future__ import annotations` for forward references.
-- **Error handling:** Never bare `except:`. Always catch specific exceptions. Log the exception with traceback before re-raising or degrading.
+- **Error handling:** Never bare `except:`. Always catch specific exceptions. Log the exception with traceback before re-raising or degrading. Error messages must be descriptive enough to diagnose the root cause without a debugger.
 - **Logging:** `structlog` with JSON output. Same structured format as Rust: timestamp, level, service, context.
 - **Naming:** snake_case for functions/variables/modules, PascalCase for classes, UPPER_SNAKE_CASE for constants.
 - **Imports:** stdlib → third-party → local, separated by blank lines. No wildcard imports (`from x import *`).
 - **Formatting:** `ruff format` before every commit. `ruff check` must pass with zero errors.
 - **Async:** Use `asyncio` for I/O-bound services (normalizer, API, bot). Feature engine and alert engine can be synchronous if simpler.
 - **Dependencies:** Pin versions in `requirements.txt` or `pyproject.toml`. Use `pip install --break-system-packages` in Docker only.
-- **Tests:** `pytest` with fixtures. Test files mirror source structure: `processor/alerts/vol_expansion.py` → `tests/processor/alerts/test_vol_expansion.py`.
+- **Tests:** `pytest` with fixtures. Test files mirror source structure: `processor/alerts/vol_expansion.py` → `tests/processor/alerts/test_vol_expansion.py`. All public functions must have unit tests.
+- **Documentation:** Document all public functions and classes with docstrings. Include: what it does, args, return value, and raised exceptions for any non-trivial function.
 - **No ORM for TimescaleDB.** Use raw SQL via `asyncpg` or `psycopg`. TimescaleDB-specific features (hypertables, continuous aggregates, compression) don't map well to ORMs.
+- **Performance:** This service processes high-frequency candle data. Prefer `list` batch operations over per-message DB calls. Avoid blocking calls inside `async` functions — use `asyncio.to_thread()` for CPU-bound work. Profile hot paths with `cProfile` or `py-spy` before optimizing. Prefer `tuple` over `dict` for fixed-schema DB rows (lower memory, faster iteration).
+- **Memory:** Avoid accumulating unbounded in-memory collections. Batch buffers must have both a size cap and a timeout flush. Generator expressions over list comprehensions when the result is consumed once and the dataset is large.
+- **Concurrency:** Use `asyncio.gather()` for concurrent I/O fan-out (e.g., querying multiple symbols). Limit concurrency with `asyncio.Semaphore` when hitting rate-limited external APIs. Never use `threading` alongside `asyncio` unless wrapping a blocking library via `asyncio.to_thread()`.
 
 ### 3.3 React / TypeScript (Dashboard)
 - **Framework:** React 18+ with Vite

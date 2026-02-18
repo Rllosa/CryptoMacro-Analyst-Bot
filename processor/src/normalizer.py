@@ -8,6 +8,7 @@ from typing import Any
 import nats
 import nats.errors
 import structlog
+from pydantic import ValidationError
 from psycopg_pool import AsyncConnectionPool
 
 from config import Settings
@@ -24,6 +25,10 @@ class Normalizer:
     """
     Subscribes to market.candles.> on NATS JetStream and batch-writes
     candles to market_candles with deduplication.
+
+    Flush policy: whichever comes first — batch_size messages accumulated,
+    or batch_timeout_secs elapsed since last flush. This bounds both latency
+    and write amplification under variable load.
     """
 
     def __init__(self, settings: Settings, pool: AsyncConnectionPool) -> None:
@@ -32,9 +37,17 @@ class Normalizer:
         self._shutdown = asyncio.Event()
 
     def request_shutdown(self) -> None:
+        """Signal the run loop to stop after draining the current batch."""
         self._shutdown.set()
 
     async def run(self) -> None:
+        """
+        Main event loop: consume NATS messages, accumulate into batches,
+        flush to TimescaleDB, ack after successful write.
+
+        Runs until request_shutdown() is called. On shutdown, any buffered
+        messages are flushed before the NATS subscription is closed.
+        """
         nc, sub = await self._connect_with_retry()
         log.info(
             "normalizer.subscribed",
@@ -81,17 +94,37 @@ class Normalizer:
             return None
 
     def _parse_message(self, msg: Any) -> tuple | None:
-        """Deserialize and validate a NATS message. Returns DB row or None on error."""
+        """
+        Deserialize and validate a NATS candle message.
+
+        Returns a DB row tuple on success, or None if the message is malformed.
+        JSON errors and schema validation errors are logged separately so
+        bad-JSON and bad-schema failures are distinguishable in logs.
+        """
         try:
             data = json.loads(msg.data.decode())
+        except json.JSONDecodeError as exc:
+            log.warning("normalizer.parse_failed.invalid_json", error=str(exc))
+            return None
+
+        try:
             candle = CandleMessage.model_validate(data)
             return candle.to_db_row()
-        except Exception as exc:
-            log.warning("normalizer.parse_failed", error=str(exc))
+        except ValidationError as exc:
+            log.warning(
+                "normalizer.parse_failed.invalid_schema",
+                error=str(exc),
+                symbol=data.get("symbol"),
+            )
             return None
 
     async def _flush(self, batch: list[tuple[Any, tuple]]) -> None:
-        """Write batch to DB, then ack all messages."""
+        """
+        Write batch to TimescaleDB, then ack all messages.
+
+        Messages are NOT acked on DB failure — JetStream will redeliver
+        them after ack_wait expires, providing at-least-once delivery.
+        """
         rows = [row for _, row in batch]
         msgs = [msg for msg, _ in batch]
         try:
@@ -126,4 +159,7 @@ class Normalizer:
                     retry_in_secs=delay,
                 )
                 await asyncio.sleep(delay)
-        raise RuntimeError("unreachable")
+        raise RuntimeError(
+            f"Could not connect to NATS at {self._settings.nats_url} "
+            f"after {_NATS_CONNECT_MAX_RETRIES} attempts"
+        )

@@ -6,6 +6,7 @@ Phase 1 (Weeks 1-2) — DI-2
 Entry point: loads config, runs backfill on startup, then subscribes to
 NATS JetStream and persists candle messages to TimescaleDB in batches.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,6 +28,7 @@ log = structlog.get_logger()
 
 
 def _configure_logging() -> None:
+    """Configure structlog for JSON output to stdout with ISO timestamps and log level filtering."""
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
@@ -43,6 +45,10 @@ def _configure_logging() -> None:
 
 
 async def main() -> None:
+    """
+    Service entry point: configure logging, connect to TimescaleDB, run startup
+    backfill, then run the Normalizer until a shutdown signal is received.
+    """
     _configure_logging()
 
     settings = Settings()
