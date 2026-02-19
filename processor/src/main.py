@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 CryptoMacro Analyst Bot — Processor Service
-Phase 1 (Weeks 1-2) — DI-2, FE-1
+Phase 1 (Weeks 1-2) — DI-2, FE-1, FE-2
 
 Entry point: loads config, runs backfill on startup, then runs the
-NATS-to-TimescaleDB normalizer and the 5-minute feature engine concurrently.
+NATS-to-TimescaleDB normalizer, per-asset feature engine, and cross-asset
+feature engine concurrently.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from backfill import run_backfill  # noqa: E402
 from config import Settings  # noqa: E402
+from cross_features.engine import CrossFeatureEngine  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
 from features.engine import FeatureEngine  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
@@ -73,20 +75,22 @@ async def main() -> None:
 
     normalizer = Normalizer(settings, pool)
     feature_engine = FeatureEngine(settings, pool, redis_client)
+    cross_engine = CrossFeatureEngine(settings, pool, redis_client)
 
-    # Graceful shutdown on SIGTERM / SIGINT — propagate to both workers
+    # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
 
     def _handle_signal() -> None:
         log.info("processor.shutdown_requested")
         normalizer.request_shutdown()
         feature_engine.request_shutdown()
+        cross_engine.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
 
     log.info("processor.running")
-    await asyncio.gather(normalizer.run(), feature_engine.run())
+    await asyncio.gather(normalizer.run(), feature_engine.run(), cross_engine.run())
 
     await redis_client.aclose()
     await pool.close()
