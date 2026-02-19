@@ -496,6 +496,20 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 - [ ] `candles_5m` and `candles_1h` continuous aggregates populated automatically
 - [ ] DB connection survives TimescaleDB restart
 
+**Implementation Notes (2026-02-18):**
+
+**Dual-flush policy:** Flush triggered by whichever comes first — `batch_size` messages accumulated (default 100) OR `batch_timeout_secs` elapsed (default 5 s) since last flush. Bounds both write latency and write amplification under variable load.
+
+**At-least-once delivery via JetStream acks:** Messages are NOT acked on DB failure — JetStream redelivers after `ack_wait` expires. Acks fire concurrently via `asyncio.gather` after a successful batch write.
+
+**Single multi-row INSERT:** `upsert_candles` builds one `INSERT INTO market_candles ... VALUES (...),(...) ON CONFLICT (time, symbol, timeframe) DO NOTHING` per flush — one server round-trip regardless of batch size (not `executemany`). Placeholder string `_ROW_PH` hoisted at import time.
+
+**Pydantic validation on every message:** `CandleMessage.model_validate(data)` validates schema; bad-JSON and bad-schema failures are logged with separate event keys so they're distinguishable in log analysis.
+
+**Gap backfill on startup:** `run_backfill` queries `MAX(time)` per symbol, compares to `now`, fetches from Binance Futures REST (`/fapi/v1/klines`) if gap > `gap_threshold_minutes` (default 5 min). All 4 symbols run concurrently via `asyncio.gather`. Paginates with 1 000-kline pages (Binance max), stops when response is shorter than limit.
+
+**NATS connect with exponential backoff:** Retries up to 10 times with `min(2^(attempt-1), 30)` second delay. Same backoff pattern used in `db.py` (`create_pool_with_retry`).
+
 **Tests:**
 - [ ] Fixture replay (DI-0): replay recorded candles → DB row count matches expected
 - [ ] Duplicate replay: same fixture twice → single row per candle only
@@ -681,6 +695,24 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 - [ ] Redis contains latest feature snapshot per symbol
 - [ ] One symbol missing data doesn't affect others
 - [ ] Deterministic: replay same candles → identical features
+
+**Implementation Notes (2026-02-18):**
+
+**Feature engine in `processor/`** (not `analyzer/`): `processor/` owns all data pipeline components — normalizer, feature engine, regime classifier, alert engine. `analyzer/` is LLM-only. `features/` package lives at `processor/src/features/`.
+
+**EAV schema for `computed_features`:** One row per `(time, symbol, feature_name)` — avoids wide-table schema churn when adding or removing features. Single multi-row `INSERT ... ON CONFLICT (time, symbol, feature_name) DO NOTHING` per cycle (not `executemany`). Placeholder string `_FEATURE_PH` hoisted at module level.
+
+**22 features per symbol per cycle:** `r_5m`, `r_1h`, `r_4h`, `r_1d`, `rv_1h`, `rv_4h`, `rsi_14`, `macd`, `macd_signal`, `macd_hist`, `bb_upper`, `bb_middle`, `bb_lower`, `bb_pct_b`, `bb_bandwidth`, `atr_14`, `ema_slope`, `volume_zscore`, `breakout_4h_high`, `breakout_4h_low`, `breakout_24h_high`, `breakout_24h_low`.
+
+**Zero hardcoded thresholds:** All indicator parameters (`rsi_period`, `macd_fast/slow/signal`, `bollinger_period`, `bollinger_std`, `atr_period`, `rv_window_1h`, `rv_window_4h`, `volume_zscore_window`, `breakout_4h_window`, `breakout_24h_window`, `ema_slope_period`) loaded from `configs/thresholds.yaml` via `FeatureParams` frozen dataclass.
+
+**`ta` library for indicators:** `RSIIndicator`, `MACD`, `BollingerBands`, `AverageTrueRange`, `EMAIndicator` from `ta.momentum`, `ta.trend`, `ta.volatility`. Annualised RV: `std(log_returns) * sqrt(105120)` where `105120 = 365 × 24 × 12` (5-min periods per year), hoisted as `_PERIODS_PER_YEAR`.
+
+**NaN filtering before DB insert:** `math.isnan(value)` guard in `_compute_symbol` prevents inserting NULL into the `NOT NULL value` column when insufficient candle history is available (< `bollinger_period` rows).
+
+**Per-symbol `asyncio.gather` with `return_exceptions=True`:** One failing symbol (e.g. insufficient data) never crashes others — graceful degradation per rule 1.3. Failures logged as warnings.
+
+**Redis cache:** Key `features:latest:{symbol_lower}`, TTL = 600 s. Payload: `{"time": iso_str, "features": {name: value}}`. NaN values serialised as `null`.
 
 **Tests:**
 - [ ] Golden fixture test: known candle sequence → expected RSI, MACD, BB, ATR values (3 test vectors minimum)
