@@ -6,11 +6,12 @@ import pandas as pd
 
 from features.config import FeatureParams
 
-# Alt symbols paired against BTC — ordering matches thresholds.yaml leadership_rotation.pairs
-_ALT_PAIRS: tuple[tuple[str, str], ...] = (
-    ("ETHUSDT", "eth_btc"),
-    ("SOLUSDT", "sol_btc"),
-    ("HYPEUSDT", "hype_btc"),
+# Pre-built (symbol, rs_key, zscore_key) tuples — key names hoisted at module level
+# so they are never reconstructed via f-string inside the compute loop.
+_ALT_PAIRS: tuple[tuple[str, str, str], ...] = (
+    ("ETHUSDT", "eth_btc_rs", "eth_btc_rs_zscore"),
+    ("SOLUSDT", "sol_btc_rs", "sol_btc_rs_zscore"),
+    ("HYPEUSDT", "hype_btc_rs", "hype_btc_rs_zscore"),
 )
 _BTC = "BTCUSDT"
 
@@ -81,17 +82,17 @@ def compute_all_cross_features(
     features: dict[str, float] = {}
     btc = closes[_BTC] if _BTC in closes.columns else pd.Series(dtype=float)
 
-    for alt_sym, prefix in _ALT_PAIRS:
+    for alt_sym, rs_key, z_key in _ALT_PAIRS:
         if alt_sym not in closes.columns or btc.empty:
-            features[f"{prefix}_rs"] = math.nan
-            features[f"{prefix}_rs_zscore"] = math.nan
+            features[rs_key] = math.nan
+            features[z_key] = math.nan
             continue
 
         rs, z = compute_rs_and_zscore(
             closes[alt_sym], btc, params.rs_lookback, params.rs_zscore_window
         )
-        features[f"{prefix}_rs"] = rs
-        features[f"{prefix}_rs_zscore"] = z
+        features[rs_key] = rs
+        features[z_key] = z
 
     # Stub until FE-3 integrates macro data (FRED + Yahoo Finance)
     features["macro_stress"] = 0.0

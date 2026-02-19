@@ -65,7 +65,7 @@ async def upsert_cross_features(pool: AsyncConnectionPool, rows: Sequence[tuple]
         return 0
     query = (
         f"INSERT INTO cross_features {_CROSS_COLS} "
-        f"VALUES {', '.join(_CROSS_PH for _ in rows)} "
+        f"VALUES {', '.join([_CROSS_PH] * len(rows))} "
         "ON CONFLICT (time, feature_name) DO NOTHING"
     )
     flat = [v for row in rows for v in row]
