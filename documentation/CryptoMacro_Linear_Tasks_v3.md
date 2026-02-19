@@ -745,6 +745,14 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 - [ ] Golden fixture: known price sequences for BTC/ETH/SOL → expected RS ratios and z-scores
 - [ ] Fixture: leadership rotation scenario → expected RS values trigger rotation detection
 
+**Implementation Notes (merged PR #13):**
+- **RS formula — return difference (alpha):** `RS[t] = (alt[t]/alt[t-N] - 1) - (btc[t]/btc[t-N] - 1)`. Ratio variant (`alt_return / btc_return`) is numerically unstable when BTC return ≈ 0; alpha never divides by BTC return.
+- **Correlation stubs absent from output:** `corr_btc_sp500`, `corr_btc_dxy`, `corr_btc_sp500_7d` emit no rows until FE-3. Absent rows = NULL for consumers (safer than NaN in a NOT NULL column). `macro_stress` stubbed at `0.0` and written as a real row.
+- **Single DB round-trip for close fetch:** window function `ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY time DESC)` fetches N candles for all 4 symbols in one query.
+- **Constant hoisting:** `_ALT_PAIRS` stores pre-built `(symbol, rs_key, zscore_key)` — no f-strings in the compute loop. `_ASSETS_INVOLVED` hoisted at module level. `[_CROSS_PH] * len(rows)` uses list multiplication (O(1)) — rows iterated exactly once.
+- **Candle window:** `rs_zscore_window (60) + rs_lookback (20) = 80`, computed once in `__init__`.
+- **36 new tests (126 total):** golden fixture vectors with analytically-derived z-score values (≈±2.7429 for surge/decline), symmetry checks, edge cases.
+
 ---
 
 ### FE-3: Macro Stress Composite (0–100)
