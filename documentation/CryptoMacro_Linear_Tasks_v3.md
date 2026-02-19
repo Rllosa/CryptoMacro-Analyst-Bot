@@ -908,6 +908,19 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 - [ ] Deterministic test: cooldown expires → re-trigger allowed
 - [ ] Contract test: alert payload passes schema (F-7)
 
+**Implementation Notes:**
+
+`AlertEngine` is a stateful helper (not a background service) — no `run()` loop. Individual alert evaluators (AL-2+) call `evaluate_and_fire()` once per 5m cycle. This keeps AL-1 generic and alert logic isolated per type.
+
+Evaluation order (fastest rejection first):
+1. `not conditions_met` → reset persistence, return False
+2. cooldown active in Redis → log suppressed, reset persistence, return False
+3. persistence count < required cycles → increment, return False
+4. Build payload, validate against F-7 schema → raises on contract violation
+5. Insert to DB → publish to NATS → activate cooldown → reset persistence
+
+`CooldownRegistry` is Redis-backed (survives restarts). Key: `cooldown:{type}:{dedup_key}`. Uses `SETEX` with TTL = cooldown_minutes × 60. `PersistenceTracker` is in-memory (resets on restart) — acceptable because persistence is a 10-min safety gate (2 × 5m cycles), not a delivery guarantee. Dedup key is `f"{symbol or '_'}:{direction}"` — combined with `alert_type` forms the full unique signature. NATS uses regular `nc.publish` (not JetStream) for Phase 1; DEL-1 adds the durable consumer. F-7 schema loaded once at import time in `validator.py`, called before every DB write.
+
 ---
 
 ### AL-2: Alert — VOL_EXPANSION
