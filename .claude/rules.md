@@ -67,6 +67,8 @@ These are non-negotiable. Violating any of these is a blocking issue regardless 
 
 **Never push code without explicit user permission.** Always ask before `git push` or `git commit`.
 
+**Always use `--squash --delete-branch` when merging.** Remote branch must be deleted at merge time: `gh pr merge --squash --delete-branch`.
+
 PR description template:
 
 ```markdown
@@ -165,8 +167,8 @@ git commit -m "F-3: Add docker-compose with TimescaleDB, Redis, NATS"
 gh pr create --title "F-3: Docker Compose Infrastructure Setup" ...
 # → Update SOLO-24 to "In Review"
 
-# 4. Merge PR (after user approval)
-gh pr merge
+# 4. Merge PR (after user approval) — always squash + delete branch
+gh pr merge --squash --delete-branch
 # → Update SOLO-24 to "Done"
 ```
 

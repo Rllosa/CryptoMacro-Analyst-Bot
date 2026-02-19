@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 CryptoMacro Analyst Bot — Processor Service
-Phase 1 (Weeks 1-2) — DI-2, FE-1, FE-2
+Phase 1 (Weeks 1-3) — DI-2, FE-1, FE-2, AL-1
 
 Entry point: loads config, runs backfill on startup, then runs the
 NATS-to-TimescaleDB normalizer, per-asset feature engine, and cross-asset
-feature engine concurrently.
+feature engine concurrently.  AlertEngine is initialized here and passed to
+alert evaluators (AL-2+) — it has no run loop of its own.
 """
 
 from __future__ import annotations
@@ -15,12 +16,15 @@ import signal
 import sys
 from pathlib import Path
 
+import nats as nats_client
 import redis.asyncio as aioredis
 import structlog
 
 # Ensure src/ is on the path when run directly (must come before local imports)
 sys.path.insert(0, str(Path(__file__).parent))
 
+from alerts.config import AlertParams  # noqa: E402
+from alerts.engine import AlertEngine  # noqa: E402
 from backfill import run_backfill  # noqa: E402
 from config import Settings  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
@@ -63,6 +67,10 @@ async def main() -> None:
     pool = await create_pool_with_retry(settings.db_dsn)
     log.info("processor.db_connected")
 
+    # Connect to NATS for alert publishing (AL-1+)
+    nc = await nats_client.connect(settings.nats_url)
+    log.info("processor.nats_connected")
+
     # Connect to Redis for feature caching
     redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)
     log.info("processor.redis_connected")
@@ -76,6 +84,8 @@ async def main() -> None:
     normalizer = Normalizer(settings, pool)
     feature_engine = FeatureEngine(settings, pool, redis_client)
     cross_engine = CrossFeatureEngine(settings, pool, redis_client)
+    # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
+    alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))  # noqa: F841
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -92,6 +102,7 @@ async def main() -> None:
     log.info("processor.running")
     await asyncio.gather(normalizer.run(), feature_engine.run(), cross_engine.run())
 
+    await nc.close()
     await redis_client.aclose()
     await pool.close()
     log.info("processor.stopped")
