@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.config import AlertParams  # noqa: E402
 from alerts.engine import AlertEngine  # noqa: E402
+from alerts.vol_expansion import VolExpansionEvaluator  # noqa: E402
 from backfill import run_backfill  # noqa: E402
 from config import Settings  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
@@ -85,7 +86,8 @@ async def main() -> None:
     feature_engine = FeatureEngine(settings, pool, redis_client)
     cross_engine = CrossFeatureEngine(settings, pool, redis_client)
     # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
-    alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))  # noqa: F841
+    alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
+    vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -95,12 +97,13 @@ async def main() -> None:
         normalizer.request_shutdown()
         feature_engine.request_shutdown()
         cross_engine.request_shutdown()
+        vol_expansion.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
 
     log.info("processor.running")
-    await asyncio.gather(normalizer.run(), feature_engine.run(), cross_engine.run())
+    await asyncio.gather(normalizer.run(), feature_engine.run(), cross_engine.run(), vol_expansion.run())
 
     await nc.close()
     await redis_client.aclose()
