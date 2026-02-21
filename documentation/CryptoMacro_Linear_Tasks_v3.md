@@ -963,14 +963,22 @@ Evaluation order (fastest rejection first):
 - Payload: which asset gaining/losing, magnitude, current regime
 
 **Acceptance Criteria:**
-- [ ] Fires on RS z-score exceeding threshold
-- [ ] Cooldown 120 min respected
-- [ ] Payload identifies rotation direction
+- [x] Fires on RS z-score exceeding threshold
+- [x] Cooldown 120 min respected
+- [x] Payload identifies rotation direction
 
 **Tests:**
-- [ ] Test vector: SOL/BTC RS z-score = 2.3 → FIRES with "SOL outperforming BTC"
-- [ ] Test vector: same signal 60 min later → SUPPRESSED
-- [ ] Fixture: BTC → alts rotation scenario triggers alert
+- [x] Test vector: SOL/BTC RS z-score = 2.3 → FIRES with "SOL outperforming BTC"
+- [x] Test vector: same signal 60 min later → SUPPRESSED
+- [x] Fixture: BTC → alts rotation scenario triggers alert
+
+**Implementation Notes:**
+
+- **No rolling buffer** — FE-2 already computes and caches `eth_btc_rs_zscore`, `sol_btc_rs_zscore`, `hype_btc_rs_zscore` in `cross_features:latest` (Redis, TTL 600s). One Redis read per cycle covers all 3 pairs. This contrasts with AL-2 which needs an in-memory deque to z-score raw rv_1h on the fly.
+- **`symbol=None` throughout** — Cross-asset alert. Direction encodes both pair and winner: `"{alt}_over_btc"` (positive z, alt outperforms BTC) or `"btc_over_{alt}"` (negative z). The AlertEngine dedup key uses `(alert_type, symbol=None, direction)`, giving each of the 6 directional slots its own independent cooldown and persistence counter.
+- **6 evaluate_and_fire calls per cycle** — 3 pairs × 2 directions, sequential (not gathered). No I/O fan-out since data is already in memory from the single Redis read.
+- **Severity always MEDIUM** — No escalation logic in Phase 1. Deferred to EV-3 threshold tuning.
+- **E2E verified** — Persistence (2 cycles), NATS payload (`symbol=null`, `severity=MEDIUM`, `leading/lagging` in context), `alert_payload.json` schema pass, DB row with `symbol=NULL`.
 
 ---
 
