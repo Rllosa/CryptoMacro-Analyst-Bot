@@ -23,6 +23,7 @@ import structlog
 # Ensure src/ is on the path when run directly (must come before local imports)
 sys.path.insert(0, str(Path(__file__).parent))
 
+from alerts.breakout import BreakoutEvaluator  # noqa: E402
 from alerts.config import AlertParams  # noqa: E402
 from alerts.engine import AlertEngine  # noqa: E402
 from alerts.leadership_rotation import LeadershipRotationEvaluator  # noqa: E402
@@ -90,6 +91,7 @@ async def main() -> None:
     alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
+    breakout = BreakoutEvaluator(settings, redis_client, alert_engine)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -101,6 +103,7 @@ async def main() -> None:
         cross_engine.request_shutdown()
         vol_expansion.request_shutdown()
         leadership_rotation.request_shutdown()
+        breakout.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -112,6 +115,7 @@ async def main() -> None:
         cross_engine.run(),
         vol_expansion.run(),
         leadership_rotation.run(),
+        breakout.run(),
     )
 
     await nc.close()
