@@ -77,6 +77,8 @@ services:
       dockerfile: Dockerfile
     container_name: cryptomacro-processor
     env_file: .env
+    volumes:
+      - ./configs:/app/configs:ro
     depends_on:
       timescaledb:
         condition: service_healthy

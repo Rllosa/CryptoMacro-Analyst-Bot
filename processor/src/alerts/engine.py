@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
@@ -36,8 +36,6 @@ def _build_nats_payload(
     fire_time: datetime,
 ) -> dict[str, Any]:
     """Build the NATS alert payload conforming to the F-7 alert_payload.json contract."""
-    from datetime import timedelta
-
     cooldown_until = (fire_time + timedelta(minutes=cooldown_minutes)).isoformat()
     return {
         "alert_id": record.id,
