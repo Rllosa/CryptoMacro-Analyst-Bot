@@ -70,12 +70,19 @@ class VolExpansionParams:
 # ---------------------------------------------------------------------------
 
 
+_ZERO_STD_THRESHOLD = 1e-10  # RV values are [0.001, 0.5]; fp accumulation error is ~1e-17
+
 def _compute_rv_zscore(buf: deque[float], rv_1h: float) -> float | None:
     """
     Population z-score of rv_1h against the rolling buffer.
 
     Returns None when fewer than _MIN_BUFFER_SAMPLES entries are available
-    (warmup period after service restart).  Returns 0.0 if std == 0.
+    (warmup period after service restart).  Returns 0.0 if std is effectively zero.
+
+    _ZERO_STD_THRESHOLD guards against floating-point accumulation error when
+    all buffer values are equal: sum() on Python 3.11/Linux accumulates a tiny
+    residual (~1e-17) that makes std nonzero despite a constant buffer, producing
+    ±1.0 instead of 0.0.
     """
     if len(buf) < _MIN_BUFFER_SAMPLES:
         return None
@@ -83,7 +90,7 @@ def _compute_rv_zscore(buf: deque[float], rv_1h: float) -> float | None:
     mean = sum(buf) / n
     variance = sum((x - mean) ** 2 for x in buf) / n
     std = math.sqrt(variance)
-    if std == 0.0:
+    if std < _ZERO_STD_THRESHOLD:
         return 0.0
     return (rv_1h - mean) / std
 
