@@ -16,6 +16,33 @@ from alerts.config import AlertParams
 from alerts.engine import AlertEngine
 from alerts.validator import validate_payload
 
+
+# ---------------------------------------------------------------------------
+# Fake persistence — async in-memory, avoids Redis setup in engine tests
+# ---------------------------------------------------------------------------
+
+
+class _FakePersistence:
+    """Async in-memory persistence for use in AlertEngine unit tests.
+
+    Keeps the engine tests focused on evaluation logic (cooldown, firing,
+    dedup) rather than the Redis-backed persistence implementation, which
+    is tested separately in test_alert_persistence.py.
+    """
+
+    def __init__(self) -> None:
+        self._counts: dict[str, int] = {}
+
+    async def record_met(self, key: str) -> int:
+        self._counts[key] = self._counts.get(key, 0) + 1
+        return self._counts[key]
+
+    async def record_not_met(self, key: str) -> None:
+        self._counts[key] = 0
+
+    async def get(self, key: str) -> int:
+        return self._counts.get(key, 0)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -52,6 +79,8 @@ def _make_engine(persistence: int = 1, cooldown_active: bool = False) -> AlertEn
     # Replace I/O on the cooldown registry directly (no need to patch the module)
     engine._cooldown.is_active = AsyncMock(return_value=cooldown_active)
     engine._cooldown.activate = AsyncMock()
+    # Use in-memory fake so engine tests focus on evaluation logic, not Redis
+    engine._persistence = _FakePersistence()
     return engine
 
 
@@ -83,16 +112,17 @@ def test_v1_persistence_not_met_returns_false() -> None:
 
 
 def test_v1_persistence_count_is_one_after_first_cycle() -> None:
-    engine = _make_engine(persistence=2)
+    async def _inner() -> None:
+        engine = _make_engine(persistence=2)
+        with (
+            patch("alerts.engine.insert_alert", AsyncMock()),
+            patch("alerts.engine.publish_alert", AsyncMock()),
+            patch("alerts.engine.validate_payload"),
+        ):
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+        assert await engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 1
 
-    with (
-        patch("alerts.engine.insert_alert", AsyncMock()),
-        patch("alerts.engine.publish_alert", AsyncMock()),
-        patch("alerts.engine.validate_payload"),
-    ):
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
-
-    assert engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 1
+    asyncio.run(_inner())
 
 
 # ---------------------------------------------------------------------------
@@ -136,17 +166,18 @@ def test_v2_cooldown_activated_after_fire() -> None:
 
 def test_v2_persistence_resets_to_zero_after_fire() -> None:
     """After firing, persistence counter resets so next N cycles are required again."""
-    engine = _make_engine(persistence=2)
+    async def _inner() -> None:
+        engine = _make_engine(persistence=2)
+        with (
+            patch("alerts.engine.insert_alert", AsyncMock()),
+            patch("alerts.engine.publish_alert", AsyncMock()),
+            patch("alerts.engine.validate_payload"),
+        ):
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+            await engine.evaluate_and_fire(**_BASE_KWARGS)  # fires here
+        assert await engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 0
 
-    with (
-        patch("alerts.engine.insert_alert", AsyncMock()),
-        patch("alerts.engine.publish_alert", AsyncMock()),
-        patch("alerts.engine.validate_payload"),
-    ):
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))  # fires here
-
-    assert engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 0
+    asyncio.run(_inner())
 
 
 # ---------------------------------------------------------------------------
@@ -173,24 +204,25 @@ def test_v3_cooldown_active_returns_false() -> None:
 
 def test_v3_cooldown_suppression_resets_persistence() -> None:
     """Cooldown suppression resets the persistence counter (don't carry stale count)."""
-    engine = _make_engine(persistence=2)
-    # First cycle builds count=1 with cooldown inactive
-    with (
-        patch("alerts.engine.insert_alert", AsyncMock()),
-        patch("alerts.engine.publish_alert", AsyncMock()),
-        patch("alerts.engine.validate_payload"),
-    ):
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
+    async def _inner() -> None:
+        engine = _make_engine(persistence=2)
+        # First cycle builds count=1 with cooldown inactive
+        with (
+            patch("alerts.engine.insert_alert", AsyncMock()),
+            patch("alerts.engine.publish_alert", AsyncMock()),
+            patch("alerts.engine.validate_payload"),
+        ):
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+        # Now activate cooldown
+        engine._cooldown.is_active = AsyncMock(return_value=True)
+        with (
+            patch("alerts.engine.insert_alert", AsyncMock()),
+            patch("alerts.engine.publish_alert", AsyncMock()),
+        ):
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+        assert await engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 0
 
-    # Now activate cooldown
-    engine._cooldown.is_active = AsyncMock(return_value=True)
-    with (
-        patch("alerts.engine.insert_alert", AsyncMock()),
-        patch("alerts.engine.publish_alert", AsyncMock()),
-    ):
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
-
-    assert engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 0
+    asyncio.run(_inner())
 
 
 # ---------------------------------------------------------------------------
@@ -218,19 +250,20 @@ def test_v4_condition_drop_resets_persistence() -> None:
 
 
 def test_v4_persistence_count_restarts_from_one_after_drop() -> None:
-    engine = _make_engine(persistence=2)
-    kwargs_not_met = {**_BASE_KWARGS, "conditions_met": False}
+    async def _inner() -> None:
+        engine = _make_engine(persistence=2)
+        kwargs_not_met = {**_BASE_KWARGS, "conditions_met": False}
+        with (
+            patch("alerts.engine.insert_alert", AsyncMock()),
+            patch("alerts.engine.publish_alert", AsyncMock()),
+            patch("alerts.engine.validate_payload"),
+        ):
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+            await engine.evaluate_and_fire(**kwargs_not_met)
+            await engine.evaluate_and_fire(**_BASE_KWARGS)
+        assert await engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 1
 
-    with (
-        patch("alerts.engine.insert_alert", AsyncMock()),
-        patch("alerts.engine.publish_alert", AsyncMock()),
-        patch("alerts.engine.validate_payload"),
-    ):
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
-        _run(engine.evaluate_and_fire(**kwargs_not_met))
-        _run(engine.evaluate_and_fire(**_BASE_KWARGS))
-
-    assert engine._persistence.get("VOL_EXPANSION:BTCUSDT:up") == 1
+    asyncio.run(_inner())
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +333,24 @@ def test_fired_payload_contains_required_fields() -> None:
     assert "conditions" in payload
     assert "context" in payload
     assert "cooldown_until" in payload
+
+
+def test_symbol_none_market_wide_alert_fires() -> None:
+    """symbol=None (market-wide alert) fires, passes F-7 contract, and payload symbol is null."""
+    engine = _make_engine(persistence=1)
+    kwargs_market_wide = {**_BASE_KWARGS, "symbol": None, "alert_type": "REGIME_SHIFT"}
+    captured: list[dict] = []
+
+    async def _capture_publish(nc, payload: dict) -> None:
+        captured.append(payload)
+
+    with (
+        patch("alerts.engine.insert_alert", AsyncMock()),
+        patch("alerts.engine.publish_alert", _capture_publish),
+    ):
+        result = _run(engine.evaluate_and_fire(**kwargs_market_wide))
+
+    assert result is True
+    assert len(captured) == 1
+    assert captured[0]["symbol"] is None
+    validate_payload(captured[0])

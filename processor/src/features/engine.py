@@ -70,7 +70,7 @@ class FeatureEngine:
                     log.warning(
                         "feature_engine.symbol_failed",
                         symbol=symbol,
-                        error=str(result),
+                        exc_info=result,
                     )
 
             elapsed = time.monotonic() - cycle_start

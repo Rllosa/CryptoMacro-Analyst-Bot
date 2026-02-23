@@ -106,7 +106,7 @@ class LeadershipRotationEvaluator:
             try:
                 await self._evaluate(cycle_time)
             except Exception as exc:
-                log.warning("leadership_rotation.cycle_failed", error=str(exc))
+                log.warning("leadership_rotation.cycle_failed", exc_info=exc)
 
             elapsed = time.monotonic() - cycle_start
             sleep_secs = max(0.0, self._settings.feature_interval_secs - elapsed)

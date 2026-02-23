@@ -77,9 +77,15 @@ services:
       dockerfile: Dockerfile
     container_name: cryptomacro-processor
     env_file: .env
+    volumes:
+      - ./configs:/app/configs:ro
     depends_on:
-      - timescaledb
-      - nats
+      timescaledb:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - cryptomacro-net
     restart: unless-stopped

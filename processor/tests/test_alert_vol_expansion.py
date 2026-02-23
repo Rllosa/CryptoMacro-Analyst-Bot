@@ -283,3 +283,22 @@ def test_v7_down_direction_uses_low_breakout_flags() -> None:
     down_call = next(c for c in calls if c.kwargs["direction"] == "down")
     assert up_call.kwargs["conditions_met"] is False
     assert down_call.kwargs["conditions_met"] is True
+
+
+def test_v8_severity_medium_without_24h_breakout() -> None:
+    """rv and vol meet HIGH thresholds, but no 24h breakout → severity=MEDIUM (not HIGH).
+
+    Exercises the _classify_severity path end-to-end through _evaluate_symbol:
+    rv_1h z-score = 2.5 (exactly at HIGH rv threshold), volume_zscore=2.0
+    (at HIGH vol threshold), but breakout_24h_high=0 → severity must be MEDIUM.
+    """
+    evaluator, engine = _make_evaluator()
+    evaluator._redis = _redis_with_features(
+        _base_features(rv_1h=_RV_AT_Z_2_5, volume_zscore=2.0, breakout_4h_high=1.0)
+    )
+    _run(evaluator._evaluate_symbol("BTCUSDT", __import__("datetime").datetime(2026, 2, 20, tzinfo=__import__("datetime").timezone.utc)))
+
+    calls = engine.evaluate_and_fire.call_args_list
+    up_call = next(c for c in calls if c.kwargs["direction"] == "up")
+    assert up_call.kwargs["conditions_met"] is True
+    assert up_call.kwargs["severity"] == "MEDIUM"
