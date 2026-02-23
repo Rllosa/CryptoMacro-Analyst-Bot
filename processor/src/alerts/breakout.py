@@ -128,7 +128,7 @@ class BreakoutEvaluator:
                     log.warning(
                         "breakout.symbol_failed",
                         symbol=symbol,
-                        error=str(result),
+                        exc_info=result,
                     )
 
             elapsed = time.monotonic() - cycle_start
