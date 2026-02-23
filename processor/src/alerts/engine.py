@@ -81,7 +81,7 @@ class AlertEngine:
         self._nc = nc
         self._params = params
         self._cooldown = CooldownRegistry(redis)
-        self._persistence = PersistenceTracker()
+        self._persistence = PersistenceTracker(redis)
 
     async def evaluate_and_fire(
         self,
@@ -119,7 +119,7 @@ class AlertEngine:
 
         # 1. Condition not met — reset persistence so the N-cycle count restarts.
         if not conditions_met:
-            self._persistence.record_not_met(f"{alert_type}:{dedup_key}")
+            await self._persistence.record_not_met(f"{alert_type}:{dedup_key}")
             return False
 
         # 2. In cooldown — suppress without incrementing persistence.
@@ -131,12 +131,12 @@ class AlertEngine:
                 symbol=symbol,
                 direction=direction,
             )
-            self._persistence.record_not_met(f"{alert_type}:{dedup_key}")
+            await self._persistence.record_not_met(f"{alert_type}:{dedup_key}")
             return False
 
         # 3. Check persistence — condition must hold for N consecutive cycles.
         persistence_key = f"{alert_type}:{dedup_key}"
-        count = self._persistence.record_met(persistence_key)
+        count = await self._persistence.record_met(persistence_key)
         required = self._params.persistence_cycles.get(alert_type, 1)
 
         if count < required:
@@ -176,7 +176,7 @@ class AlertEngine:
         await self._cooldown.activate(alert_type, dedup_key, cooldown_minutes)
 
         # Reset persistence after fire — next fire requires another N cycles.
-        self._persistence.record_not_met(persistence_key)
+        await self._persistence.record_not_met(persistence_key)
 
         log.info(
             "alert.fired",

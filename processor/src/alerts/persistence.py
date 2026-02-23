@@ -1,39 +1,54 @@
 from __future__ import annotations
 
+from typing import Any
+
+# Key prefix hoisted at module level — never rebuilt per call
+_KEY_PREFIX = "persistence:"
+
 
 class PersistenceTracker:
     """
-    In-memory consecutive-cycle counter per alert key.
+    Redis-backed consecutive-cycle counter per alert key.
 
-    Resets on service restart — acceptable because persistence is a 10-minute
-    safety gate (2 × 5m cycles), not a delivery guarantee. The worst case on
-    restart is N extra cycles before re-fire, which is preferable to the
-    complexity of Redis-backed state for a short-horizon counter.
+    Survives service restarts — Redis TTL expires the counter when the
+    trigger condition has not been met for 2× the maximum persistence window
+    (default 1200s = 20 min = 4 × 5-min cycles).
 
-    All methods are synchronous (no I/O).
+    Key scheme: persistence:{alert_key}
+    Value: integer counter managed via INCR
+    TTL: refreshed on every increment while the condition holds
+
+    Mirrors the CooldownRegistry pattern — Redis-backed state is consistent
+    across both persistence and cooldown, and both survive process restarts.
     """
 
-    def __init__(self) -> None:
-        self._counts: dict[str, int] = {}
+    def __init__(self, redis: Any, ttl_secs: int = 1200) -> None:
+        self._redis = redis
+        self._ttl = ttl_secs
 
-    def record_met(self, key: str) -> int:
+    async def record_met(self, key: str) -> int:
         """
-        Increment the consecutive count for key.
+        Increment the consecutive count for key and refresh the TTL.
 
-        Returns the new count. Call this when the trigger condition is met.
+        Returns the new count. Call when the trigger condition is met.
+        The TTL is refreshed on every increment so the key does not expire
+        between consecutive cycles while the condition holds.
         """
-        self._counts[key] = self._counts.get(key, 0) + 1
-        return self._counts[key]
+        full_key = _KEY_PREFIX + key
+        count = await self._redis.incr(full_key)
+        await self._redis.expire(full_key, self._ttl)
+        return int(count)
 
-    def record_not_met(self, key: str) -> None:
+    async def record_not_met(self, key: str) -> None:
         """
-        Reset the consecutive count for key to zero.
+        Delete the persistence key, resetting the consecutive count to zero.
 
-        Call this when the trigger condition is NOT met, when the alert fires
+        Call when the trigger condition is NOT met, when the alert fires
         (reset after fire), or when the alert is suppressed by cooldown.
         """
-        self._counts[key] = 0
+        await self._redis.delete(_KEY_PREFIX + key)
 
-    def get(self, key: str) -> int:
-        """Return the current consecutive count for key (0 if never seen)."""
-        return self._counts.get(key, 0)
+    async def get(self, key: str) -> int:
+        """Return the current consecutive count for key (0 if absent)."""
+        val = await self._redis.get(_KEY_PREFIX + key)
+        return int(val.decode()) if val is not None else 0

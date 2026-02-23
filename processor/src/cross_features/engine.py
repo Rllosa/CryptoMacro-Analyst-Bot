@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -69,12 +70,13 @@ class CrossFeatureEngine:
         log.info("cross_feature_engine.started", n_candles=self._n_candles)
         while not self._shutdown.is_set():
             cycle_time = datetime.now(tz=timezone.utc)
+            _start = time.monotonic()
             try:
                 await self._compute_cycle(cycle_time)
             except Exception as exc:
                 log.error("cross_feature_engine.cycle_failed", error=str(exc))
 
-            elapsed = (datetime.now(tz=timezone.utc) - cycle_time).total_seconds()
+            elapsed = time.monotonic() - _start
             sleep_secs = max(0.0, self._settings.feature_interval_secs - elapsed)
             await asyncio.sleep(sleep_secs)
 
