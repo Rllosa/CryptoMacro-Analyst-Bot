@@ -333,3 +333,24 @@ def test_fired_payload_contains_required_fields() -> None:
     assert "conditions" in payload
     assert "context" in payload
     assert "cooldown_until" in payload
+
+
+def test_symbol_none_market_wide_alert_fires() -> None:
+    """symbol=None (market-wide alert) fires, passes F-7 contract, and payload symbol is null."""
+    engine = _make_engine(persistence=1)
+    kwargs_market_wide = {**_BASE_KWARGS, "symbol": None, "alert_type": "REGIME_SHIFT"}
+    captured: list[dict] = []
+
+    async def _capture_publish(nc, payload: dict) -> None:
+        captured.append(payload)
+
+    with (
+        patch("alerts.engine.insert_alert", AsyncMock()),
+        patch("alerts.engine.publish_alert", _capture_publish),
+    ):
+        result = _run(engine.evaluate_and_fire(**kwargs_market_wide))
+
+    assert result is True
+    assert len(captured) == 1
+    assert captured[0]["symbol"] is None
+    validate_payload(captured[0])
