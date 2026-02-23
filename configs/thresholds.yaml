@@ -155,6 +155,9 @@ regime_classifier:
   # Minimum confidence to output regime
   min_confidence: 0.4
 
+  # Bollinger Band bandwidth threshold for "tight" price range classification
+  tight_bb_bandwidth_max: 0.03    # bb_bandwidth < 3% → "tight" (used by CHOP_RANGE)
+
   # Regime definitions with conditions
   regimes:
     # Regime 1: RISK_ON_TREND

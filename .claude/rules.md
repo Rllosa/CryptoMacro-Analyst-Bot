@@ -109,6 +109,7 @@ Rules:
 - Explicitly ask before: `git push`, creating a PR, merging a PR.
 - Never merge without explicit confirmation.
 - Always merge with `--squash --delete-branch`.
+- **Wait for CI to go green before proposing a merge.** After pushing/creating a PR, check `gh run list` and confirm the run passes. Never say "all tests pass" based on local results alone — local Python version may differ from CI.
 
 **PR Description Template**
 
