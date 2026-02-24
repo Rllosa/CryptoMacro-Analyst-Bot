@@ -28,6 +28,7 @@ from alerts.config import AlertParams  # noqa: E402
 from alerts.engine import AlertEngine  # noqa: E402
 from alerts.leadership_rotation import LeadershipRotationEvaluator  # noqa: E402
 from alerts.vol_expansion import VolExpansionEvaluator  # noqa: E402
+from regime.engine import RegimeClassifier  # noqa: E402
 from backfill import run_backfill  # noqa: E402
 from config import Settings  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
@@ -92,6 +93,7 @@ async def main() -> None:
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
     breakout = BreakoutEvaluator(settings, redis_client, alert_engine)
+    regime_classifier = RegimeClassifier(settings, pool, redis_client)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -104,6 +106,7 @@ async def main() -> None:
         vol_expansion.request_shutdown()
         leadership_rotation.request_shutdown()
         breakout.request_shutdown()
+        regime_classifier.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -116,6 +119,7 @@ async def main() -> None:
         vol_expansion.run(),
         leadership_rotation.run(),
         breakout.run(),
+        regime_classifier.run(),
     )
 
     await nc.close()
