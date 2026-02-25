@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands
 
 from config import BotSettings
+from embeds import format_alert_embed
 from routing import AlertRouter
 
 logger = logging.getLogger(__name__)
@@ -92,14 +93,7 @@ class CryptoMacroBot(commands.Bot):
             logger.error("Error processing alert: %s", e)
 
     def _build_embed(self, payload: dict) -> discord.Embed:
-        # TODO(DEL-2): Replace with format_alert_embed() from embeds.py
-        alert_type = payload.get("alert_type", "UNKNOWN")
-        severity = payload.get("severity", "UNKNOWN")
-        symbol = payload.get("symbol")
-        title = f"{severity} | {alert_type}"
-        if symbol:
-            title += f" ({symbol})"
-        return discord.Embed(title=title)
+        return format_alert_embed(payload)
 
     def request_shutdown(self) -> None:
         self._shutdown_event.set()
