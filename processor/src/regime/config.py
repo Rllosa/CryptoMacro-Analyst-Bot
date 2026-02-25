@@ -17,6 +17,7 @@ class RegimeParams:
     min_confidence: float          # 0.4  — below this → regime output is None (uncertain)
     regimes: dict[str, Any]        # raw regime definitions from thresholds.yaml
     tight_bb_bandwidth_max: float  # 0.03 — bb_bandwidth < this → "tight" price range
+    volatility_regime_high_zscore_threshold: float  # 0.5 — "high" when rv_4h_zscore > this
 
     @classmethod
     def load(cls, thresholds_path: str) -> RegimeParams:
@@ -30,4 +31,7 @@ class RegimeParams:
             min_confidence=cfg["min_confidence"],
             regimes=cfg["regimes"],
             tight_bb_bandwidth_max=cfg.get("tight_bb_bandwidth_max", 0.03),
+            volatility_regime_high_zscore_threshold=cfg.get(
+                "volatility_regime_high_zscore_threshold", 0.5
+            ),
         )
