@@ -26,6 +26,7 @@ assets:
       onchain_available: true         # BTC has on-chain flow data
       derivatives_available: true
       macro_correlation: "high"       # Primary BTC-macro correlation tracking
+      threshold_multiplier: 1.0       # baseline — thresholds calibrated against BTC
 
   ETH:
     name: "Ethereum"
@@ -46,6 +47,7 @@ assets:
       onchain_available: true         # ETH has on-chain flow data
       derivatives_available: true
       macro_correlation: "medium"
+      threshold_multiplier: 1.2       # slightly more volatile than BTC
 
   SOL:
     name: "Solana"
@@ -66,6 +68,7 @@ assets:
       onchain_available: false        # SOL on-chain explicitly out of scope
       derivatives_available: true
       macro_correlation: "low"
+      threshold_multiplier: 1.5       # mid-cap alt, higher structural volatility
 
   HYPE:
     name: "Hyperliquid"
@@ -86,6 +89,7 @@ assets:
       onchain_available: false        # HYPE on-chain explicitly out of scope
       derivatives_available: true
       macro_correlation: "low"
+      threshold_multiplier: 2.5       # low-liquidity perp DEX token — requires proportionally larger signal
 
 # Symbol list for iteration
 all_symbols:

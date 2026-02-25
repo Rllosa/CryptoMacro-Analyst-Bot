@@ -29,6 +29,7 @@ import structlog
 import yaml
 
 from alerts.engine import AlertEngine
+from alerts.symbol_multipliers import SymbolMultipliers
 from backfill import SYMBOLS
 from config import Settings
 
@@ -98,6 +99,7 @@ class BreakoutEvaluator:
         self._redis = redis
         self._engine = engine
         self._params = BreakoutParams.load(settings.thresholds_path)
+        self._multipliers = SymbolMultipliers.load(settings.symbols_path)
         self._shutdown = asyncio.Event()
 
     def request_shutdown(self) -> None:
@@ -152,7 +154,8 @@ class BreakoutEvaluator:
             log.warning("breakout.missing_features", symbol=symbol)
             return
 
-        volume_ok = volume_zscore >= self._params.volume_zscore_min
+        multiplier = self._multipliers.get(symbol)
+        volume_ok = volume_zscore >= self._params.volume_zscore_min * multiplier
 
         for direction, flag_key, exclude_if_key, is_24h in _DIRECTIONS:
             breakout_flag = bool(features.get(flag_key, 0.0))

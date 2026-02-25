@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from alerts.symbol_multipliers import SymbolMultipliers
 from alerts.vol_expansion import (
     VolExpansionEvaluator,
     VolExpansionParams,
@@ -49,6 +50,9 @@ _RV_AT_Z_1_5 = 0.0175
 _THRESHOLDS_PATH = str(
     Path(__file__).parents[2] / "configs" / "thresholds.yaml"
 )
+_SYMBOLS_PATH = str(
+    Path(__file__).parents[2] / "configs" / "symbols.yaml"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +67,7 @@ def _run(coro):
 def _settings_stub():
     s = MagicMock()
     s.thresholds_path = _THRESHOLDS_PATH
+    s.symbols_path = _SYMBOLS_PATH
     s.feature_interval_secs = 300
     return s
 
@@ -302,3 +307,62 @@ def test_v8_severity_medium_without_24h_breakout() -> None:
     up_call = next(c for c in calls if c.kwargs["direction"] == "up")
     assert up_call.kwargs["conditions_met"] is True
     assert up_call.kwargs["severity"] == "MEDIUM"
+
+
+# ---------------------------------------------------------------------------
+# Multiplier tests
+# ---------------------------------------------------------------------------
+
+
+def test_multiplier_raises_rv_threshold_blocks_alert() -> None:
+    """Multiplier 2.5 raises rv threshold from 2.0 to 5.0.
+
+    rv_zscore=2.1 passes the base threshold (≥ 2.0) but fails the scaled
+    threshold (< 2.0×2.5 = 5.0) → conditions_met=False.
+    """
+    evaluator, engine = _make_evaluator()
+    # rv_1h producing z-score ≈ 2.1 with _KNOWN_BUFFER
+    rv_at_z_2_1 = 0.0205
+    evaluator._redis = _redis_with_features(
+        _base_features(rv_1h=rv_at_z_2_1, volume_zscore=2.0, breakout_4h_high=1.0)
+    )
+    evaluator._multipliers = SymbolMultipliers(multipliers={"BTCUSDT": 2.5})
+    _run(evaluator._evaluate_symbol("BTCUSDT", __import__("datetime").datetime(2026, 2, 20, tzinfo=__import__("datetime").timezone.utc)))
+
+    for call in engine.evaluate_and_fire.call_args_list:
+        assert call.kwargs["conditions_met"] is False
+
+
+def test_multiplier_1_0_preserves_original_behaviour() -> None:
+    """Multiplier 1.0 leaves effective thresholds unchanged.
+
+    rv_zscore=2.0 (exactly at base threshold), vol=1.6 → conditions_met=True.
+    """
+    evaluator, engine = _make_evaluator()
+    evaluator._redis = _redis_with_features(_base_features())
+    evaluator._multipliers = SymbolMultipliers(multipliers={"BTCUSDT": 1.0})
+    _run(evaluator._evaluate_symbol("BTCUSDT", __import__("datetime").datetime(2026, 2, 20, tzinfo=__import__("datetime").timezone.utc)))
+
+    calls = engine.evaluate_and_fire.call_args_list
+    up_call = next(c for c in calls if c.kwargs["direction"] == "up")
+    assert up_call.kwargs["conditions_met"] is True
+
+
+def test_high_severity_uses_multiplied_thresholds() -> None:
+    """Multiplier 2.5 scales HIGH thresholds: rv must be ≥ 2.5×2.5=6.25 for HIGH.
+
+    rv_zscore=2.5 clears the base HIGH rv threshold (≥ 2.5) but not the scaled
+    one (< 2.5×2.5=6.25) → severity stays MEDIUM despite meeting base conditions.
+    """
+    evaluator, engine = _make_evaluator()
+    evaluator._redis = _redis_with_features(
+        _base_features(rv_1h=_RV_AT_Z_2_5, volume_zscore=5.0, breakout_24h_high=1.0)
+    )
+    evaluator._multipliers = SymbolMultipliers(multipliers={"BTCUSDT": 2.5})
+    _run(evaluator._evaluate_symbol("BTCUSDT", __import__("datetime").datetime(2026, 2, 20, tzinfo=__import__("datetime").timezone.utc)))
+
+    calls = engine.evaluate_and_fire.call_args_list
+    # With multiplier 2.5: effective rv threshold = 2.0*2.5 = 5.0, rv_zscore=2.5 < 5.0
+    # → conditions_met=False (rv doesn't even clear base trigger), so severity=MEDIUM
+    up_call = next(c for c in calls if c.kwargs["direction"] == "up")
+    assert up_call.kwargs["conditions_met"] is False

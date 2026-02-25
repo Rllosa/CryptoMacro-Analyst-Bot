@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # Feature engine
     thresholds_path: str = Field(default="/app/configs/thresholds.yaml", alias="THRESHOLDS_PATH")
+    symbols_path: str = Field(default="/app/configs/symbols.yaml", alias="SYMBOLS_PATH")
     feature_interval_secs: int = Field(default=300, alias="FEATURE_INTERVAL_SECS")
 
     # Coinglass (DI-5)
