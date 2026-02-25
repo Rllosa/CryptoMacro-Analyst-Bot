@@ -7,16 +7,25 @@
 ## ✅ What IS In Scope (MVP v2.1)
 
 ### Core Functionality
-- **Real-time data ingestion:** Crypto price/volume (Binance), derivatives (Coinglass), macro indicators (FRED/Yahoo), on-chain flows (provider-based, BTC/ETH only)
-- **Feature computation:** Technical indicators, volatility metrics, relative strength, derivatives features, on-chain flow features — computed every 5 minutes
-- **Regime classification:** Rules-based classifier with 5 interpretable states (RISK_ON_TREND, RISK_OFF_STRESS, CHOP_RANGE, VOL_EXPANSION, DELEVERAGING)
-- **8 alert types:**
-  - 6 market alerts: VOL_EXPANSION, LEADERSHIP_ROTATION, Breakout Detection, REGIME_SHIFT, CORRELATION_BREAK, CROWDED_LEVERAGE
+- **Real-time data ingestion:**
+  - Crypto price/volume: Binance (WebSocket, 1m candles)
+  - Derivatives: Coinglass — **Phase 1.5 priority** (funding rates, OI, liquidations — unlocks DELEVERAGING regime and CROWDED_LEVERAGE alert)
+  - Macro indicators: VIX + DXY via Yahoo Finance (daily); full FRED series deferred to Phase 3+
+  - News headlines: Cryptopanic / The Block (Phase 2, async LLM classification → NEWS_EVENT alert)
+  - Implied volatility: Deribit DVOL for BTC + ETH (Phase 2)
+  - BTC Dominance: CoinGecko (Phase 2)
+  - On-chain flows: provider-based, BTC/ETH only
+- **Feature computation:** Technical indicators, volatility metrics, relative strength, derivatives features, on-chain flow features — computed every 5 minutes. Per-asset threshold multipliers for HYPE/alt calibration.
+- **Regime classification:** Rules-based classifier with 5 named states plus INDETERMINATE:
+  - Named: RISK_ON_TREND, RISK_OFF_STRESS, CHOP_RANGE, VOL_EXPANSION, DELEVERAGING
+  - INDETERMINATE: fires in REGIME_SHIFT alert after ≥25 consecutive minutes of sub-threshold confidence, signaling transitional/ambiguous market structure
+- **9 alert types:**
+  - 7 market alerts: VOL_EXPANSION, LEADERSHIP_ROTATION, Breakout Detection, REGIME_SHIFT (incl. INDETERMINATE), CORRELATION_BREAK, CROWDED_LEVERAGE, NEWS_EVENT
   - 2 on-chain alerts: EXCHANGE_INFLOW_RISK, NETFLOW_SHIFT (BTC/ETH only)
-- **LLM synthesis:** Daily briefs (2x/day via Claude API), event-triggered analysis for high-severity alerts
+- **LLM synthesis:** Daily briefs (2x/day via Claude API) with **POSITIONING BIAS section** (BULLISH/BEARISH/NEUTRAL/VOLATILE direction + leverage risk + alt exposure + actionable conditions); event-triggered analysis for high-severity alerts; async news classification (LLM-2b) feeding NEWS_EVENT alerts
 - **Discord bot:** Alert delivery, slash commands for system queries
-- **Web dashboard:** 6 views including Command Center, Asset Detail, Macro Dashboard, On-Chain Intelligence, Intelligence Center, Evaluation & Performance
-- **Evaluation framework:** Post-alert move tracking, hit rate metrics, threshold tuning tools
+- **Web dashboard:** 3 core MVP views (Command Center, Asset Detail, Intelligence Center); remaining views are fast-follows
+- **Evaluation framework:** Post-alert move tracking, hit rate metrics, threshold tuning tools, backtesting on 90–180 days of historical data (**required before live deployment**)
 
 ### Asset Coverage
 - **Market data (price, derivatives, features, alerts):** BTC, ETH, SOL, HYPE
@@ -125,6 +134,7 @@ These are interesting features that are **explicitly deferred** to post-MVP. The
 - WHALE_ACCUMULATION (long-term flow patterns)
 
 ### Stretch: Macro Enhancements (Post-MVP)
+- FRED full macro series (M2, Fed Funds, CPI, PCE, Jobless Claims) — deferred; VIX/DXY via Yahoo Finance is sufficient for MVP macro stress
 - Fed speech/FOMC minutes parsing
 - Macro event calendar integration
 - Cross-asset correlation regime detection
@@ -168,4 +178,4 @@ Before implementing any feature, ask:
 
 ---
 
-*Last updated: February 2026 — MVP v2.1 scope lock*
+*Last updated: February 2026 — MVP v2.1 scope revision (Coinglass Phase 1.5, INDETERMINATE regime, NEWS_EVENT alert, positioning bias brief, backtesting gate, FRED deferred)*

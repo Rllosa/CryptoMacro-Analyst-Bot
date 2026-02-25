@@ -566,33 +566,52 @@ QA-1:  End-to-End Smoke Test
 
 ---
 
-### Phase 2 continued — Macro + Regime + LLM (Weeks 3–4)
+### Phase 1.5 — Derivatives & Threshold Fixes (Week 2–3)
 
 ```
-DI-3:  FRED API Collector
-DI-4:  Yahoo Finance Collector
-FE-3:  Macro Stress Composite (0–100)
-FE-6:  Regime Classifier (5 regimes, deterministic)
-AL-5:  Alert — REGIME_SHIFT
-AL-6:  Alert — CORRELATION_BREAK
-LLM-1: Context Builder
-LLM-2: Claude Client + Prompt Library
-LLM-3: Daily Brief (9 AM + 7 PM Dubai)
-DEL-3: Discord — Daily Brief Delivery
-OPS-2: Macro Degrade Path
+DI-5:  Coinglass API Collector  [HIGHEST PRIORITY — unlocks DELEVERAGING + CROWDED_LEVERAGE]
+FE-4:  Derivatives Feature Computation (funding_zscore, oi_drop_1h, liquidations_1h_usd)
+FIX-1: Fix volatility_regime threshold (rv_4h_zscore > 0 → > 0.5 in classifier.py)
+FIX-2: Per-asset threshold multipliers in symbols.yaml (HYPE calibration)
 ```
 
-**Gate:** Regime classification running. Daily briefs posting to Discord. Macro degradation tested.
+**Gate:** DELEVERAGING regime can fire. CROWDED_LEVERAGE alert activates. HYPE thresholds calibrated.
 
 ---
 
-### Phase 3 — Derivatives (Weeks 5–6)
+### Phase 2 continued — Macro + Regime + LLM (Weeks 3–4)
 
 ```
-DI-5:  Coinglass API Collector
-FE-4:  Derivatives Feature Computation
-AL-7:  Alert — CROWDED_LEVERAGE
-AL-8:  Alert — DELEVERAGING_EVENT
+DI-4:   Yahoo Finance Collector (VIX + DXY — only macro inputs needed for MVP)
+DI-6:   Deribit DVOL Collector (BTC + ETH implied vol — leading indicator for VOL_EXPANSION)
+DI-7:   CoinGecko BTC Dominance (alt season signal)
+DI-8:   News Feed Collector (Cryptopanic / The Block — high-importance headlines only)
+FE-3:   Macro Stress Composite (VIX + DXY → 0–100; unlocks RISK_OFF_STRESS regime)
+FE-6:   [DONE] Regime Classifier (5 regimes + INDETERMINATE, deterministic)
+AL-5:   Alert — REGIME_SHIFT (incl. INDETERMINATE after ≥25 min uncertain)
+AL-6:   Alert — CORRELATION_BREAK
+AL-12:  Alert — NEWS_EVENT (deterministic rules on async LLM output — Rule 1.1 preserved)
+LLM-1:  Context Builder
+LLM-2:  Claude Client + Prompt Library
+LLM-2b: Async News Classifier (batch classifies DI-8 headlines → structured JSON for AL-12)
+LLM-3:  Daily Brief (9 AM + 7 PM Dubai) with POSITIONING BIAS section
+LLM-3b: Positioning Bias — regime → BULLISH/BEARISH/NEUTRAL/VOLATILE + leverage risk + alt exposure
+DEL-3:  Discord — Daily Brief Delivery
+OPS-2:  Macro Degrade Path
+
+NOTE: DI-3 (FRED full series) deferred to Phase 5+. VIX + DXY via Yahoo Finance suffices.
+NOTE: LLM-2b is async background service — never in 5m hot path. Rule 1.1 preserved.
+```
+
+**Gate:** All 5 regimes active (incl. RISK_OFF_STRESS). INDETERMINATE alert fires. Deribit DVOL flowing. Daily briefs posting.
+
+---
+
+### Phase 3 — Derivatives Alerts (Weeks 5–6)
+
+```
+AL-7:  Alert — CROWDED_LEVERAGE (uses FE-4 funding_zscore from Phase 1.5)
+AL-8:  Alert — DELEVERAGING_EVENT (uses FE-4 liquidations from Phase 1.5)
 LLM-4: Event-Triggered Analysis
 OPS-3: Derivatives Degrade Path
 ```
@@ -605,7 +624,7 @@ OPS-3: Derivatives Degrade Path
 
 ```
 F-2:   Finalize provider decision (if not done)
-DI-6:  On-Chain Exchange Flow Collector (BTC/ETH only)
+DI-9:  On-Chain Exchange Flow Collector (BTC/ETH only)
 FE-5:  On-Chain Feature Computation
 AL-9:  Alert — EXCHANGE_INFLOW_RISK
 AL-10: Alert — NETFLOW_SHIFT
@@ -666,17 +685,23 @@ F-3 → F-4 → DI-1 → DI-2 → FE-1 → AL-1 → AL-2 → QA-1
                                          → AL-5 (needs FE-6)
                                          → AL-6 (needs FE-3)
 
-DI-3 → FE-3 → FE-6 → AL-5
-DI-4 ↗
-
+Phase 1.5:
 DI-5 → FE-4 → AL-7
             → AL-8 → LLM-4
+FIX-1: classifier.py (rv_4h_zscore threshold)
+FIX-2: symbols.yaml (per-asset multipliers)
 
-F-2 → DI-6 → FE-5 → AL-9
+Phase 2:
+DI-4 → FE-3 → FE-6 [DONE] → AL-5
+DI-6 (Deribit DVOL) → FE-3/cross_features
+DI-7 (CoinGecko BTC.D) → cross_features
+
+Phase 4:
+F-2 → DI-9 → FE-5 → AL-9
                    → AL-10
 
 AL-1 → EV-1 → EV-2 → EV-3
-FE-6 → EV-4
+FE-6 → EV-4 (backtesting — required before live deployment)
 
 DEL-4 → DEL-5 → DEL-6 → DEL-7 → DEL-8..12
 ```

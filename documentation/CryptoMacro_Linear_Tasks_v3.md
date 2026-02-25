@@ -519,6 +519,8 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 ### DI-3: FRED API Collector
 
+> **DEFERRED to Phase 5+** — Full FRED series (M2, Fed Funds, CPI, PCE, Jobless Claims) not needed for MVP. VIX + DXY via Yahoo Finance (DI-4) is sufficient for macro stress. FRED data is weekly/monthly — too lagging for 5-minute alert cycles. Revisit post-MVP if macro granularity becomes necessary.
+
 **Goal:** Collect macro indicators from FRED: Fed Funds Rate, 2Y/10Y Yields, M2, CPI, PCE, Jobless Claims.
 
 **Dependencies:** F-4, F-5a
@@ -575,23 +577,37 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 ### DI-5: Coinglass API Collector
 
+> **PHASE 1.5 — HIGHEST PRIORITY.** Unlocks DELEVERAGING regime (currently dead code — needs `liquidations_1h_usd`, `oi_drop_1h`) and CROWDED_LEVERAGE alert (`funding_zscore > 2.5 + OI spike`). Implement immediately after FE-6.
+
 **Goal:** Derivatives data: funding rates, open interest, liquidations for BTC, ETH, SOL, HYPE.
 
 **Dependencies:** F-4, F-5a
 
+**Data to collect (via Coinglass API):**
+
+| Endpoint | Data | Polling |
+|----------|------|---------|
+| `/funding` | Funding rate per symbol × exchange | 5 min |
+| `/open_interest` | OI in USD per symbol × exchange | 5 min |
+| `/liquidation` | Long/short liq volume per symbol | 1 min |
+
+**Exchanges:** Binance, OKX, Bybit
+
 **Requirements:**
-- Coinglass API client for all 4 assets
+- Coinglass API client for BTC, ETH, SOL, HYPE
 - Aggregated funding rates across Binance, OKX, Bybit
 - Total + per-exchange OI (USD)
 - Liquidation data: long/short, size, exchange, timestamp
 - Write to `derivatives_metrics`
 - Polling: every 5 minutes for funding/OI, 1 minute for liquidations
 - Graceful degradation: if unavailable, derivatives features → NaN
+- Max 3 consecutive failures before marking degraded
 
 **Acceptance Criteria:**
 - [ ] Funding, OI, and liquidation data stored for all 4 assets × 3 exchanges
 - [ ] If Coinglass down → derivatives alerts disabled only, everything else continues
 - [ ] No API key leakage in logs
+- [ ] Data written to `derivatives_metrics` table (not raw storage)
 
 **Tests:**
 - [ ] Unit test: mock Coinglass response → verify `derivatives_metrics` row structure
@@ -599,7 +615,9 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 ---
 
-### DI-6: On-Chain Exchange Flow Collector (BTC/ETH Only)
+### DI-9: On-Chain Exchange Flow Collector (BTC/ETH Only)
+
+> **Renumbered from DI-6 to DI-9** to avoid collision with Deribit DVOL (now DI-6) and CoinGecko (DI-7), News Feed (DI-8) added in Phase 2. References in OPS-4 and FE-5 updated accordingly.
 
 **Goal:** Integrate the chosen entity-tagged on-chain provider (from F-2) for BTC and ETH exchange flows.
 
@@ -757,52 +775,76 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 ### FE-3: Macro Stress Composite (0–100)
 
-**Goal:** Compute `macro_stress` feeding regime classification and alert severity.
+> **SIMPLIFIED SCOPE (Phase 2).** Original plan included full FRED macro composite. Scope reduced to VIX + DXY only — FRED series deferred to Phase 5+. Implement after DI-4 (Yahoo Finance) ships.
 
-**Dependencies:** DI-3, DI-4, FE-2
+**Goal:** Compute `macro_stress` (0–100) feeding regime classification (RISK_OFF_STRESS) and alert severity.
+
+**Dependencies:** DI-4, FE-2 (DI-3 dependency removed — FRED deferred)
+
+**Revised inputs (Phase 2 only):**
+
+| Feature | Source | Update freq |
+|---------|--------|-------------|
+| `vix` | Yahoo Finance DI-4 (^VIX) | daily |
+| `dxy_momentum` | Yahoo Finance DI-4 (DX-Y.NYB) | daily |
+
+**Output features:**
+- `macro_stress` — composite 0–100: `vix_norm * 0.6 + dxy_stress * 0.4`
+- `vix` — raw VIX level (passed through to `cross_features`)
+- `dxy_momentum` — 5-day DXY rate-of-change
 
 **Requirements:**
-- Composite of: VIX level, yield curve (2Y-10Y spread), DXY momentum, equity drawdown
-- Each component normalized to 0–100
-- Weighted average — weights loaded from `thresholds.yaml`, not hardcoded
+- Weights loaded from `thresholds.yaml`, not hardcoded
 - Write to `cross_features.macro_stress` every 5 minutes
-- Update correlations: `corr_btc_sp500`, `corr_btc_dxy`, `corr_btc_sp500_7d`
+- Update `corr_btc_sp500`, `corr_btc_dxy`, `corr_btc_sp500_7d` when data available
 
 **Acceptance Criteria:**
 - [ ] `macro_stress` updates every 5 minutes, always 0–100
-- [ ] High VIX + inverted yield curve + DXY spike → stress > 60
+- [ ] High VIX + DXY spike → stress > 60
 - [ ] Calm markets → stress < 30
-- [ ] Correlations computed on 30-day and 7-day rolling windows
 - [ ] Weights loaded from YAML config
+- [ ] Degrades gracefully when Yahoo Finance unavailable
 
 **Tests:**
-- [ ] Golden fixture: known macro values → expected stress score
+- [ ] Golden fixture: known VIX + DXY values → expected stress score
 - [ ] Unit test: verify weights read from `thresholds.yaml` not hardcoded
 
 ---
 
 ### FE-4: Derivatives Feature Computation
 
-**Goal:** Compute funding z-score, OI change %, liquidation burst z-score from derivatives data.
+> **PHASE 1.5** — Consumes Coinglass (DI-5) data. Must be implemented after DI-5 ships. These features activate DELEVERAGING regime and CROWDED_LEVERAGE alert which are currently dead code.
 
-**Dependencies:** DI-5
+**Goal:** Compute derivatives features from Coinglass data, written to `features:latest:{symbol}` alongside FE-1 features.
+
+**Dependencies:** DI-5 (hard dependency — no data without Coinglass)
+
+**Input tables (written by DI-5):**
+- `coinglass_funding_rate` — 8h snapshots per symbol
+- `coinglass_open_interest` — 5m snapshots per symbol
+- `coinglass_liquidations` — 1h aggregated per symbol
+
+**Output features (added to `features:latest:{symbol}`):**
+
+| Feature | Formula | Purpose |
+|---------|---------|---------|
+| `funding_zscore` | z-score vs 30-day rolling | CROWDED_LEVERAGE trigger |
+| `oi_drop_1h` | % OI drop in last hour (negative = drop) | DELEVERAGING trigger |
+| `liquidations_1h_usd` | Total USD liq volume in last hour | DELEVERAGING trigger |
 
 **Requirements:**
-- `funding_zscore`: z-score vs 30-day rolling mean/std
-- `oi_change_pct_1h`: % change in OI over last hour
-- `liq_burst_zscore`: z-score of 1h liquidation volume vs 30-day rolling
 - Add to `computed_features` (fill previously NULL derivatives columns)
-- Cache in Redis
-- Degrade to NaN when derivatives data unavailable — no crash
+- Cache in Redis alongside FE-1 features (same `features:latest:{symbol}` key)
+- Degrade to NaN when Coinglass unavailable — no crash
 
 **Acceptance Criteria:**
 - [ ] All three features computed every 5 minutes
 - [ ] Z-scores mathematically correct (verified on sample data)
 - [ ] Degrade to NaN without crash when Coinglass unavailable
-- [ ] `computed_features` rows contain non-null derivatives fields when data available
+- [ ] `features:latest:{symbol}` Redis key contains derivatives fields when data available
 
 **Tests:**
-- [ ] Golden fixture: known funding/OI sequences → expected z-scores
+- [ ] Golden fixture: known funding/OI/liq sequences → expected z-scores
 - [ ] Unit test: empty derivatives data → NaN output, no crash
 
 ---
@@ -838,35 +880,42 @@ During Phase 0 gate verification (`docker-compose up` full test), encountered an
 
 ### FE-6: Regime Classifier (5 Regimes, Deterministic)
 
+> **DONE — PR #20 merged (2026-02-23).** See implementation notes below. FE-3 dependency removed — `macro_stress` stubbed at `0.0` until FE-3 ships (zero is safe default). INDETERMINATE handling moved to AL-5 (see there).
+
 **Goal:** Rules-based regime classifier with 5 states, evaluating every 5 minutes. Entirely deterministic.
 
-**Dependencies:** FE-1, FE-2, FE-3
+**Dependencies:** FE-1, FE-2 (FE-3 not a hard blocker — macro_stress stubs to 0.0 until FE-3 ships)
 
 **Requirements:**
 - 5 regimes: `RISK_ON_TREND`, `RISK_OFF_STRESS`, `CHOP_RANGE`, `VOL_EXPANSION`, `DELEVERAGING`
 - All conditions and thresholds from `thresholds.yaml` — no hardcoded values
-- Confidence score (0.0–1.0): weighted sum of conditions met + z-score extremeness
-- Below 0.4 confidence → "uncertain", no regime shift alert
-- `key_drivers` JSONB: top 3 factors
-- `conditions_met` JSONB: boolean map of all conditions checked
-- Write to `regime_state` every 5 minutes
-- Cache current regime in Redis
-- On-chain can be a driver in Risk-Off/Deleveraging but never sets regime alone
+- Confidence score (0.0–1.0): weighted sum of conditions met + z-score bonus
+- Below min_confidence (0.4) → `regime=None` (uncertain); no DB write, Redis still written
+- `contributing_factors` JSONB logged per cycle
+- Write to `regime_state` every 5 minutes (skipped when uncertain)
+- Cache `regime:latest` in Redis (TTL 600s) — always written, even when uncertain
+- Tiebreak priority: DELEVERAGING > RISK_OFF_STRESS > VOL_EXPANSION > RISK_ON_TREND > CHOP_RANGE
+
+**Implementation Notes (PR #20):**
+- `processor/src/regime/` — 5 files: `__init__.py`, `config.py`, `classifier.py`, `db.py`, `engine.py`
+- `RegimeParams` frozen dataclass loads from `thresholds.yaml`; `tight_bb_bandwidth_max: 0.03` added
+- `_build_regime_inputs()` maps raw Redis feature names to semantic names (single translation layer)
+- `_compute_rv_4h_zscore()` duplicated from `vol_expansion.py` (avoids coupling); in-memory `deque(maxlen=288)`
+- FE-3/FE-4 fields (`vix`, `dxy_momentum`, `funding_zscore`, etc.) default to `0.0` until those engines ship
+- 18 tests — all pass; wired into `main.py` alongside other engines
+
+**Known issue (FIX-1):** `volatility_regime = "high" if rv_4h_zscore > 0 else "low"` fires ~50% of the time by construction. Fix: `> 0.5`. See FIX-1 task.
 
 **Acceptance Criteria:**
-- [ ] Regime computed and stored every 5 minutes
-- [ ] Each regime activates under documented conditions (manually verified with test data)
-- [ ] Confidence always 0.0–1.0
-- [ ] Below 0.4 → labeled "uncertain"
-- [ ] `key_drivers` contains exactly top 3 contributors
-- [ ] Redis reflects latest regime with < 1s latency
-- [ ] Deterministic: same inputs → same regime always
-- [ ] On-chain alone cannot trigger regime change
+- [x] Regime computed every 5 minutes
+- [x] Each regime activates under documented conditions
+- [x] Confidence always 0.0–1.0
+- [x] Below 0.4 → `regime=None`, DB write skipped, Redis still written
+- [x] Redis reflects latest regime with < 1s latency
+- [x] Deterministic: same inputs → same regime always
 
 **Tests:**
-- [ ] Golden regime fixture suite: 5 input sets (one per regime) → expected regime + confidence (critical)
-- [ ] Edge case: all features at boundary values → no crash, regime is "uncertain"
-- [ ] Unit test: on-chain elevated but market calm → regime does NOT shift to Risk-Off
+- [x] 18 tests — unit tests for `_eval_condition`, `classify_regime`, `RegimeParams`, integration tests for `_run_cycle`, DB unit test for `insert_regime`
 
 ---
 
@@ -1006,25 +1055,37 @@ Evaluation order (fastest rejection first):
 
 ### AL-5: Alert — REGIME_SHIFT
 
-**Goal:** Fire when regime changes with sufficient confidence.
+**Goal:** Fire on confirmed regime transitions AND on INDETERMINATE — extended periods of ambiguous/transitional market structure.
 
 **Dependencies:** AL-1, FE-6
 
 **Requirements:**
-- Trigger: regime changed AND confidence >= 0.5
-- Min confidence and cooldown from `thresholds.yaml`
-- Payload: old regime, new regime, confidence, key drivers
+
+**Case 1 — Confirmed regime transition:**
+- Trigger: regime changed from one named state to another AND confidence >= 0.5
 - Cooldown: 90 minutes
-- Does NOT fire below 0.4 confidence
+- Payload: old_regime, new_regime, confidence, contributing_factors
+
+**Case 2 — INDETERMINATE:**
+- Trigger: `result.regime = None` (uncertain) persists for ≥ N consecutive 5-minute cycles (default N=5, i.e. ≥ 25 minutes)
+- `direction = "indeterminate"` in payload
+- Severity: MEDIUM
+- Separate cooldown bucket from named regime transitions
+- `_uncertain_streak: int` counter in `RegimeShiftEvaluator` — increments each cycle with `regime=None`, resets on any named regime
+- Does NOT fire on single uncertain cycle (N-cycle gate same as persistence)
 
 **Acceptance Criteria:**
 - [ ] Fires on confirmed regime transition at >= 0.5 confidence
 - [ ] No alert below 0.5 confidence
-- [ ] Payload includes old/new regime + drivers
+- [ ] Fires INDETERMINATE after ≥ 25 min of consecutive uncertain cycles
+- [ ] INDETERMINATE has its own cooldown (doesn't block named regime transition alerts)
+- [ ] Payload includes old/new regime + drivers (or "indeterminate" direction)
 
 **Tests:**
 - [ ] Test vector: CHOP → VOL_EXPANSION at 0.6 → FIRES
 - [ ] Test vector: CHOP → VOL_EXPANSION at 0.35 → NO FIRE
+- [ ] Test vector: 5 consecutive `regime=None` cycles → INDETERMINATE fires
+- [ ] Test vector: 4 consecutive `regime=None` cycles → no fire
 - [ ] Fixture: regime transition scenario triggers once then cooldown prevents re-fire
 
 ---
@@ -1861,7 +1922,7 @@ Evaluation order (fastest rejection first):
 
 **Goal:** When on-chain provider fails, flow alerts disable, regime uses market-only signals.
 
-**Dependencies:** OPS-1, DI-6
+**Dependencies:** OPS-1, DI-9
 
 **Requirements:**
 - Provider down → EXCHANGE_INFLOW_RISK and NETFLOW_SHIFT auto-disable
@@ -2011,6 +2072,321 @@ Evaluation order (fastest rejection first):
 
 ---
 
+## Epic 11: Infrastructure Fixes & Threshold Calibration
+
+*Phase 1.5 — architecture gaps and threshold correctness fixes discovered post-implementation.*
+
+---
+
+### INFRA-1: Architecture Gap Fixes
+
+> **DONE — PR #19 merged (2026-02-23).** Four gaps found during code review.
+
+**Goal:** Fix four architectural gaps in the processor service.
+
+**Changes made:**
+1. **docker-compose.yml** — Added `redis` to `processor` service `depends_on`. Processor uses Redis heavily but could start before Redis was ready.
+2. **CrossFeatureEngine timing** — Replaced wall-clock `datetime.now()` with `time.monotonic()` for cycle-interval tracking. NTP adjustments could cause double-fire or skipped cycles.
+3. **PersistenceTracker** — Made Redis-backed (survives restarts). Previously in-memory → reset on every restart, silently losing persistence state.
+4. **CI pipeline** — Added `.github/workflows/processor.yml` to run `ruff check` + `pytest` on PRs.
+
+---
+
+### QA-2: Golden-Fixture Snapshot Tests for Alert Evaluators
+
+**Goal:** Freeze exact NATS payload shape for AL-2, AL-3, AL-4. Catch silent payload regressions.
+
+**Dependencies:** AL-2, AL-3, AL-4
+
+**Requirements:**
+- For each alert type: a `test_golden_payload_{alert_type}` test that constructs known input, captures NATS payload, and compares against a JSON fixture file under `processor/tests/fixtures/`
+- Fixture files committed alongside tests — act as diff guards
+- If any NATS payload field changes, at least one golden test fails
+
+**Fixture files:**
+- `processor/tests/fixtures/golden_vol_expansion.json`
+- `processor/tests/fixtures/golden_leadership_rotation.json`
+- `processor/tests/fixtures/golden_breakout.json`
+
+**Acceptance Criteria:**
+- [ ] 3 golden tests (one per alert type)
+- [ ] Fixtures committed
+- [ ] `pytest tests/ -q` passes
+- [ ] Any payload field change causes at least one test failure
+
+---
+
+### FIX-1: Fix volatility_regime Threshold
+
+**Goal:** Fix a statistical error in the regime classifier that makes `volatility_regime = "high"` fire ~50% of the time regardless of actual market conditions.
+
+**Dependencies:** FE-6
+
+**Problem:** In `processor/src/regime/classifier.py`, `_build_regime_inputs()` computes:
+```python
+"volatility_regime": "high" if rv_4h_zscore > 0 else "low"
+```
+By statistical construction, a z-score > 0 approximately 50% of the time. The field carries no information.
+
+**Fix:** Change threshold to `> 0.5` (or configurable via `thresholds.yaml`):
+```python
+"volatility_regime": "high" if rv_4h_zscore > params.volatility_regime_threshold else "low"
+```
+
+**Impact:** RISK_ON_TREND, RISK_OFF_STRESS, VOL_EXPANSION all use `volatility_regime == "high"` as a condition — all are currently misfiring ~50% of the time.
+
+**Acceptance Criteria:**
+- [ ] Threshold moved to `thresholds.yaml` under `regime_classifier.volatility_regime_threshold`
+- [ ] Default value: `0.5`
+- [ ] Updated tests reflect new threshold
+- [ ] No hardcoded value remains in `classifier.py`
+
+---
+
+### FIX-2: Per-Asset Threshold Multipliers
+
+**Goal:** Apply per-asset scaling to alert thresholds. HYPE is 10–20x less liquid than BTC — BTC-calibrated thresholds generate false positives on HYPE.
+
+**Dependencies:** AL-2, AL-3, AL-4, FE-1
+
+**Problem:** All 4 symbols use identical thresholds from `thresholds.yaml`. Normal HYPE volume spikes look like VOL_EXPANSION at BTC-calibrated levels. HYPE candles are routinely 3–5x larger than BTC ATR ratios.
+
+**Solution:** Add `threshold_multiplier` per symbol to `configs/symbols.yaml`:
+```yaml
+symbols:
+  BTC:  { threshold_multiplier: 1.0 }
+  ETH:  { threshold_multiplier: 1.2 }
+  SOL:  { threshold_multiplier: 1.5 }
+  HYPE: { threshold_multiplier: 2.5 }
+```
+
+Applied at evaluator layer: each evaluator loads the multiplier for its symbol and scales all threshold comparisons.
+
+**Acceptance Criteria:**
+- [ ] `symbols.yaml` has `threshold_multiplier` per asset
+- [ ] All Phase 1–2 evaluators (AL-2, AL-3, AL-4) apply multiplier
+- [ ] Tests verify HYPE threshold = BTC threshold × 2.5
+- [ ] No multiplier hardcoded in evaluator code
+
+---
+
+## Epic 12: Phase 2 Data Sources
+
+*New data providers added in the plan revision. Deribit and CoinGecko are free-tier, no auth.*
+
+---
+
+### DI-6: Deribit DVOL — Implied Volatility Index
+
+**Goal:** Collect BTC and ETH implied volatility index (DVOL) from Deribit. Leading indicator for VOL_EXPANSION regime.
+
+**Dependencies:** F-4
+
+**What is DVOL:** Deribit DVOL is the crypto equivalent of VIX — a real-time implied volatility index for BTC and ETH options. Unlike realized vol (historical), DVOL reflects what the options market expects future volatility to be.
+
+**Why it matters:**
+- DVOL spike before price moves = leading indicator for VOL_EXPANSION
+- DVOL elevated + funding high = options traders and perp traders both expect volatility → regime confirmation
+- Available publicly (no API key required for historical data)
+
+**API:** `GET https://www.deribit.com/api/v2/get_volatility_index_data?currency=BTC&resolution=3600`
+
+**Requirements:**
+- Poll hourly for BTC and ETH DVOL
+- Write to `macro_data` with `source = 'deribit'`
+- Backfill 180 days on first run
+- Rate limit: 20 req/s (generous)
+- Graceful degradation: DVOL is enhancement, not critical path
+
+**Acceptance Criteria:**
+- [ ] BTC and ETH DVOL stored hourly
+- [ ] 180-day backfill complete on first run
+- [ ] Deribit down → logged, system continues without DVOL
+- [ ] Data available in `cross_features` for FE-3 consumption
+
+---
+
+### DI-7: CoinGecko BTC Dominance
+
+**Goal:** Collect BTC market dominance (BTC.D) from CoinGecko. Signals alt season (RISK_ON_TREND) or BTC flight-to-safety.
+
+**Dependencies:** F-4
+
+**Signal interpretation:**
+- BTC.D rising = capital rotating from alts to BTC (risk-off within crypto)
+- BTC.D falling = alt season, risk appetite high, RISK_ON_TREND signal strengthens
+- BTC.D > 60% historically = bear market consolidation in BTC
+
+**API:** `GET https://api.coingecko.com/api/v3/global` — returns `btc_dominance` (float, percentage). Free tier, no API key required.
+
+**Requirements:**
+- Poll every 10 minutes (free tier safe limit: ~5–15 req/min)
+- Write `btc_dominance` to `cross_features`
+- Backfill 180 days via `/coins/bitcoin/market_chart`
+- Rate limit: 10 req/min max
+- Graceful degradation: non-critical
+
+**Acceptance Criteria:**
+- [ ] `btc_dominance` updated every 10 minutes in `cross_features`
+- [ ] 180-day backfill complete
+- [ ] CoinGecko down → logged, system continues
+- [ ] `cross_features:latest` Redis key includes `btc_dominance`
+
+---
+
+### DI-8: News Feed Collector (Cryptopanic)
+
+**Goal:** Poll for high-importance crypto news headlines and store for async LLM classification (LLM-2b).
+
+**Dependencies:** F-4
+
+**Architecture note:** Headlines feed LLM-2b (async classifier) → structured JSON → AL-12 (deterministic evaluator). LLM-2b is **never** in the 5-minute alert trigger path (Rule 1.1 preserved).
+
+**API:** `GET https://cryptopanic.com/api/v1/posts/?filter=hot&currencies=BTC,ETH,SOL`
+
+**Pre-filters (before LLM):**
+- `filter=hot` (trending posts only)
+- `min_votes: 30` (community vote gate)
+- `kind: news | analysis` (no social posts)
+- `max_age_minutes: 30` (skip stale headlines)
+
+**Requirements:**
+- Poll every 5 minutes
+- Deduplicate by headline ID (don't re-classify seen headlines)
+- Store raw headlines with metadata (votes, timestamp, currencies)
+- Pass new headlines to LLM-2b via internal queue or Redis pub/sub
+- Rate limit: 5 req/s (free tier)
+- Graceful degradation: news is enhancement, not critical
+
+**Acceptance Criteria:**
+- [ ] New headlines stored every 5 minutes
+- [ ] No duplicate classification of same headline
+- [ ] Stale headlines (> 30 min) skipped
+- [ ] LLM-2b notified of new headlines
+
+---
+
+## Epic 13: News Classification & Positioning Bias
+
+---
+
+### LLM-2b: Async News Classifier
+
+**Goal:** Classify news headlines from DI-8 into structured market signals. Runs async — never in the 5-minute trigger hot path.
+
+**Architecture invariant:** LLM classifies headline → writes structured JSON to `news_signals` Redis key (TTL 2h) → AL-12 (deterministic evaluator) reads it. LLM never directly triggers an alert.
+
+**Dependencies:** DI-8, LLM-2
+
+**Classification output schema:**
+```json
+{
+  "headline": "...",
+  "relevant": true,
+  "direction": "bearish",
+  "confidence": "high",
+  "event_type": "regulatory",
+  "assets_affected": ["BTC", "ETH"],
+  "classified_at": "2026-02-24T12:00:00Z"
+}
+```
+
+**Requirements:**
+- Batch-classifies new headlines from DI-8 queue
+- Runs on separate async cycle (not 5-minute feature cycle)
+- Only classifies high-importance headlines (pre-filtered by DI-8)
+- Writes to `news_signals:{headline_id}` Redis key (TTL 2h)
+- If Claude API unavailable → headlines skipped, no crash
+
+**Acceptance Criteria:**
+- [ ] Headlines classified within 60 seconds of arrival
+- [ ] Structured JSON written to Redis with correct schema
+- [ ] Claude API outage → system continues, news alerts paused only
+- [ ] LLM-2b has no import path to alert engine (Rule 1.1 architectural enforcement)
+
+---
+
+### AL-12: NEWS_EVENT Alert Evaluator
+
+**Goal:** Deterministic evaluator that reads structured news signals from LLM-2b and fires NEWS_EVENT alerts. No LLM in this path.
+
+**Dependencies:** AL-1, LLM-2b
+
+**Trigger conditions (all must be true):**
+```yaml
+news_event:
+  min_confidence: "high"       # Only fire on high-confidence LLM classifications
+  max_age_minutes: 20          # Ignore stale signals
+  relevant: true               # LLM must have flagged as market-relevant
+  cooldown_minutes: 60         # Per asset, per direction
+```
+
+**Severity mapping:**
+- `event_type: regulatory` → HIGH
+- `event_type: macro` → HIGH (if assets_affected includes BTC)
+- `event_type: exchange` → MEDIUM
+- `event_type: protocol` → MEDIUM
+
+**Payload includes:** headline, direction, event_type, assets_affected, LLM confidence
+
+**Acceptance Criteria:**
+- [ ] Fires only on `high` confidence classifications
+- [ ] Does NOT fire on stale signals (> 20 min)
+- [ ] Cooldown respected per asset/direction
+- [ ] Severity correctly mapped from event_type
+- [ ] No LLM import in this file (deterministic rules only)
+
+**Tests:**
+- [ ] Test vector: `confidence=high`, `relevant=true`, `age=5min` → FIRES
+- [ ] Test vector: `confidence=medium` → NO FIRE
+- [ ] Test vector: `age=25min` → NO FIRE (stale)
+- [ ] Test vector: fired → same event 30 min later → SUPPRESSED
+
+---
+
+### LLM-3b: Positioning Bias Section in Daily Brief
+
+**Goal:** Add a "POSITIONING BIAS" section to the daily brief (LLM-3) that explicitly states the current market direction in actionable terms.
+
+**Dependencies:** LLM-3, FE-6
+
+**Direction mapping (deterministic, computed before LLM call):**
+
+| Regime | Base direction label |
+|--------|---------------------|
+| RISK_ON_TREND | BULLISH |
+| RISK_OFF_STRESS | BEARISH |
+| VOL_EXPANSION | derived from btc_trend sign (see below) |
+| DELEVERAGING | BEARISH — active unwind |
+| CHOP_RANGE | NEUTRAL — wait |
+| INDETERMINATE | UNCLEAR — transitioning |
+
+**VOL_EXPANSION special case:** Direction derived from `btc_trend` (1h return):
+- `btc_trend > 0.005` → "VOLATILE — bullish expansion"
+- `btc_trend < -0.005` → "VOLATILE — bearish expansion"
+- else → "VOLATILE — direction unclear"
+
+**Confidence qualification (3 tiers, thresholds in `thresholds.yaml`):**
+- `≥ 0.80` → "Strongly" / "confirmed" prefix
+- `0.60–0.79` → plain label (no qualifier)
+- `0.40–0.59` → "Cautiously" / "tentative" prefix
+
+**Implementation:** `context_builder.py` computes `base_label` + `qualified_label` deterministically before the LLM call. LLM receives `qualified_label` as a fact and writes the explanation — it cannot override the label.
+
+**Acceptance Criteria:**
+- [ ] POSITIONING BIAS section present in all daily briefs
+- [ ] Direction label always derived from regime, never LLM-invented
+- [ ] Confidence qualification thresholds loaded from `thresholds.yaml`
+- [ ] VOL_EXPANSION direction uses `btc_trend` sign correctly
+
+**Tests:**
+- [ ] Unit test: each regime → expected base direction label
+- [ ] Unit test: VOL_EXPANSION + btc_trend=0.01 → "bullish expansion"
+- [ ] Unit test: confidence=0.85 → "Strongly" prefix applied
+- [ ] Unit test: confidence=0.45 → "Cautiously" / "Tentative" prefix applied
+
+---
+
 ## MVP Execution Order (Solo)
 
 Sequenced for fastest time-to-value. Working alerts by end of week 2.
@@ -2023,25 +2399,31 @@ Week 0 (Days 1-3): Foundation
 
 Weeks 1-2: Crypto Alerts End-to-End
   DI-1 → DI-2 → FE-1 → FE-2
-  AL-1 → AL-2 → AL-3 → AL-4
-  DEL-1 → DEL-2 → AL-11
+  AL-1 → AL-2 → AL-3 → AL-4 → AL-11
+  DEL-1 → DEL-2
   QA-1 (smoke test proves chain works)
   OPS-1 (health model — needed by everything)
 
+Phase 1.5 (Week 2-3): Derivatives & Threshold Fixes
+  DI-5 (Coinglass — HIGHEST PRIORITY, unlocks DELEVERAGING + CROWDED_LEVERAGE)
+  FE-4 (funding_zscore, oi_drop_1h, liquidations_1h_usd)
+  FIX-1 (fix volatility_regime threshold in classifier.py: > 0 → > 0.5)
+  FIX-2 (per-asset threshold multipliers in symbols.yaml — HYPE=2.5x, SOL=1.5x)
+
 Weeks 3-4: Macro + Regime + LLM
-  DI-3 → DI-4 → FE-3
-  FE-6 → AL-5 → AL-6
-  LLM-1 → LLM-2 → LLM-3 → DEL-3
+  DI-4 → DI-6 (Deribit DVOL) → DI-7 (CoinGecko BTC.D) → DI-8 (News Feed)
+  FE-3 (VIX + DXY only; DI-3/FRED deferred to Phase 5+)
+  FE-6 [DONE] → AL-5 → AL-6 → AL-12 (News Event)
+  LLM-1 → LLM-2 → LLM-2b (async news classifier) → LLM-3 → LLM-3b → DEL-3
   OPS-2 (macro degrade path)
 
-Weeks 5-6: Derivatives
-  DI-5 → FE-4
-  AL-7 → AL-8
+Weeks 5-6: Derivatives Alerts
+  AL-7 (CROWDED_LEVERAGE) → AL-8 (DELEVERAGING_EVENT)
   LLM-4 (event analysis)
   OPS-3 (derivatives degrade path)
 
 Weeks 7-8: On-Chain
-  F-2 (finalize if not done) → DI-6 → FE-5
+  F-2 (finalize if not done) → DI-9 (On-Chain Exchange Flow) → FE-5
   AL-9 → AL-10
   F-5b (config completeness pass)
   OPS-4 (on-chain degrade path)
@@ -2050,12 +2432,14 @@ Weeks 9-10: Evaluation + Hardening
   EV-1 → EV-2 → EV-3 → EV-4
   OPS-5 → OPS-6 → OPS-7 → OPS-8
   LLM-5 (weekly deep report)
+  DI-3 (FRED — evaluate after EV-3 threshold tuning; may not be needed)
 
 Weeks 11-12: Dashboard
   DEL-4 → DEL-5 → DEL-6 → DEL-7 (MVP view)
   DEL-13 (WebSocket integration)
   DEL-8 → DEL-9 → DEL-10 → DEL-11 → DEL-12 (fast-follows)
   ST-1 (storage optimization)
+  INFRA-1 (golden fixtures + regression suite)
 ```
 
 ---
@@ -2065,17 +2449,18 @@ Weeks 11-12: Dashboard
 | Epic | Tasks | Phase |
 |------|-------|-------|
 | 1. Foundation & DevEx | F-1 through F-7 (8 tasks, with F-5 split) | Phase 0 |
-| 2. Data Ingestion | DI-0 through DI-6 (7 tasks) | Phases 1–4 |
+| 2. Data Ingestion | DI-0 through DI-9 (10 tasks; DI-3 deferred) | Phases 1–4 |
 | 3. Storage | ST-1 (1 task) | Phase 1 |
 | 4. Features & Regime | FE-1 through FE-6 (6 tasks) | Phases 1–2 |
-| 5. Alert Engine | AL-1 through AL-11 (11 tasks) | Phases 1–4 |
-| 6. LLM Synthesis | LLM-1 through LLM-5 (5 tasks) | Phases 2–3 |
+| 5. Alert Engine | AL-1 through AL-12 (12 tasks) | Phases 1–4 |
+| 6. LLM Synthesis | LLM-1, LLM-2, LLM-2b, LLM-3, LLM-3b, LLM-4, LLM-5 (7 tasks) | Phases 2–3 |
 | 7. Delivery | DEL-1 through DEL-13 (13 tasks) | Phases 1, 6 |
 | 8. Evaluation | EV-1 through EV-4 (4 tasks) | Phase 5 |
 | 9. Ops & Reliability | OPS-1 through OPS-8 (8 tasks) | Cross-cutting |
-| 10. Quality Assurance | QA-1 (1 task) | Cross-cutting |
-| **Total** | **64 tasks** | |
+| 10. Quality Assurance | QA-1, QA-2 (2 tasks) | Cross-cutting |
+| 11. Infrastructure & Fixes | INFRA-1, FIX-1, FIX-2 (3 tasks) | Phase 1.5 |
+| **Total** | **74 tasks** | |
 
 ---
 
-*End of Tasks — CryptoMacro Analyst Bot MVP v2.1 (v3 Final)*
+*End of Tasks — CryptoMacro Analyst Bot MVP v2.1 (v3 Final — updated Phase 1.5 plan, 74 tasks)*
