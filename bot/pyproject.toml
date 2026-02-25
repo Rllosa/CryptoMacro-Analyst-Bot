@@ -8,6 +8,7 @@ dependencies = [
     "discord.py>=2.3.0",
     "nats-py>=2.9.0",
     "psycopg[binary]>=3.1.0",
+    "psycopg-pool>=3.1.0",
     "redis>=5.0.0",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
@@ -42,3 +43,4 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+pythonpath = ["src"]
