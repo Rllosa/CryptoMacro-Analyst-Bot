@@ -1223,7 +1223,7 @@ Evaluation order (fastest rejection first):
 
 **Goal:** Centralized routing logic determining which alerts go to which Discord channels.
 
-**Dependencies:** AL-1, DEL-1
+**Dependencies:** AL-1
 
 **Requirements:**
 - Route HIGH severity to #alerts-high AND #alerts-all
