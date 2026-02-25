@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 CryptoMacro Analyst Bot — Processor Service
-Phase 1–1.5 (Weeks 1-3) — DI-2, DI-5, FE-1, FE-2, AL-1
+Phase 1–2 — DI-2, DI-4, DI-5, FE-1, FE-2, AL-1
 
 Entry point: loads config, runs backfill on startup, then runs the
 NATS-to-TimescaleDB normalizer, per-asset feature engine, cross-asset
-feature engine, and Coinglass derivatives collector concurrently.
-AlertEngine is initialized here and passed to alert evaluators (AL-2+)
-— it has no run loop of its own.
+feature engine, Coinglass derivatives collector, and Yahoo Finance collector
+concurrently. AlertEngine is initialized here and passed to alert evaluators
+(AL-2+) — it has no run loop of its own.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from regime.engine import RegimeClassifier  # noqa: E402
 from backfill import run_backfill  # noqa: E402
 from coinglass.collector import CoinglassCollector  # noqa: E402
 from config import Settings  # noqa: E402
+from yahoo_finance.collector import YahooFinanceCollector  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
 from derivatives.engine import DerivativesEngine  # noqa: E402
@@ -94,6 +95,7 @@ async def main() -> None:
     # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
     alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
     coinglass = CoinglassCollector(settings, pool)
+    yahoo_finance = YahooFinanceCollector(settings, pool, redis_client)
     derivatives_engine = DerivativesEngine(settings, pool, redis_client)
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
@@ -109,6 +111,7 @@ async def main() -> None:
         feature_engine.request_shutdown()
         cross_engine.request_shutdown()
         coinglass.request_shutdown()
+        yahoo_finance.request_shutdown()
         derivatives_engine.request_shutdown()
         vol_expansion.request_shutdown()
         leadership_rotation.request_shutdown()
@@ -124,6 +127,7 @@ async def main() -> None:
         feature_engine.run(),
         cross_engine.run(),
         coinglass.run(),
+        yahoo_finance.run(),
         derivatives_engine.run(),
         vol_expansion.run(),
         leadership_rotation.run(),
