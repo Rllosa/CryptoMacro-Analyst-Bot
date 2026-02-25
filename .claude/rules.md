@@ -586,6 +586,7 @@ DI-4:   Yahoo Finance Collector (VIX + DXY — only macro inputs needed for MVP)
 DI-6:   Deribit DVOL Collector (BTC + ETH implied vol — leading indicator for VOL_EXPANSION)
 DI-7:   CoinGecko BTC Dominance (alt season signal)
 DI-8:   News Feed Collector (Cryptopanic / The Block — high-importance headlines only)
+DI-10:  Coinglass Liquidation Heatmap Collector (price-level cascade risk — context for LLM-3b)
 FE-3:   Macro Stress Composite (VIX + DXY → 0–100; unlocks RISK_OFF_STRESS regime)
 FE-6:   [DONE] Regime Classifier (5 regimes + INDETERMINATE, deterministic)
 AL-5:   Alert — REGIME_SHIFT (incl. INDETERMINATE after ≥25 min uncertain)
@@ -695,6 +696,7 @@ Phase 2:
 DI-4 → FE-3 → FE-6 [DONE] → AL-5
 DI-6 (Deribit DVOL) → FE-3/cross_features
 DI-7 (CoinGecko BTC.D) → cross_features
+DI-10 (Liquidation Heatmap) → LLM-3b
 
 Phase 4:
 F-2 → DI-9 → FE-5 → AL-9

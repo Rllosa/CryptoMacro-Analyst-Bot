@@ -35,6 +35,7 @@ from coinglass.collector import CoinglassCollector  # noqa: E402
 from config import Settings  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
+from derivatives.engine import DerivativesEngine  # noqa: E402
 from features.engine import FeatureEngine  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
 
@@ -93,6 +94,7 @@ async def main() -> None:
     # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
     alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
     coinglass = CoinglassCollector(settings, pool)
+    derivatives_engine = DerivativesEngine(settings, pool, redis_client)
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
     breakout = BreakoutEvaluator(settings, redis_client, alert_engine)
@@ -107,6 +109,7 @@ async def main() -> None:
         feature_engine.request_shutdown()
         cross_engine.request_shutdown()
         coinglass.request_shutdown()
+        derivatives_engine.request_shutdown()
         vol_expansion.request_shutdown()
         leadership_rotation.request_shutdown()
         breakout.request_shutdown()
@@ -121,6 +124,7 @@ async def main() -> None:
         feature_engine.run(),
         cross_engine.run(),
         coinglass.run(),
+        derivatives_engine.run(),
         vol_expansion.run(),
         leadership_rotation.run(),
         breakout.run(),

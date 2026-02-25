@@ -2266,6 +2266,78 @@ Applied at evaluator layer: each evaluator loads the multiplier for its symbol a
 
 ---
 
+### DI-10: Coinglass Liquidation Heatmap Collector
+
+**Goal:** Fetch price-level liquidation cluster data for BTC, ETH, SOL, HYPE from Coinglass. The heatmap shows where significant long/short positions would be force-liquidated at given price levels — providing forward-looking cascade risk context for LLM-3b's positioning bias output.
+
+**Dependencies:** F-4, DI-5 (same Coinglass API key infrastructure)
+
+**Blocks:** LLM-3b (SOLO-97)
+
+**API:** `GET https://open-api-v4.coinglass.com/api/futures/liquidation/map`
+
+**Data captured per symbol:**
+
+| Field | Description |
+|-------|-------------|
+| `price_level` | Price band (USD) |
+| `long_liq_usd` | USD value of longs liquidated at this level |
+| `short_liq_usd` | USD value of shorts liquidated at this level |
+| `total_liq_usd` | Combined liquidation value at this level |
+| `captured_at` | Snapshot timestamp |
+
+**Requirements:**
+- Poll every 15 minutes (heatmap is slow-moving; no need for 5-min cadence)
+- Fetch for all 4 symbols: BTC, ETH, SOL, HYPE
+- Store top-N price levels by total liquidation value (N=20 per symbol)
+- Write to `liquidation_heatmap` TimescaleDB table (new table, idempotent migration)
+- Cache latest snapshot per symbol to Redis: `heatmap:latest:{sym.lower()}usdt` (TTL 1800s)
+- Same Coinglass API key as DI-5 — reuse client, add endpoint only
+- Graceful degradation: if Coinglass unavailable → LLM-3b omits heatmap context, no crash
+- Rate limit: honour same 3-failure circuit breaker as DI-5
+
+**DB schema (`liquidation_heatmap`):**
+```sql
+CREATE TABLE IF NOT EXISTS liquidation_heatmap (
+    time            TIMESTAMPTZ NOT NULL,
+    symbol          TEXT        NOT NULL,
+    price_level     NUMERIC     NOT NULL,
+    long_liq_usd    NUMERIC,
+    short_liq_usd   NUMERIC,
+    total_liq_usd   NUMERIC,
+    PRIMARY KEY (time, symbol, price_level)
+);
+SELECT create_hypertable('liquidation_heatmap', 'time', if_not_exists => TRUE);
+```
+
+**Redis payload (JSON, TTL 1800s):**
+```json
+{
+  "captured_at": "2026-02-25T12:00:00Z",
+  "symbol": "BTC",
+  "levels": [
+    { "price": 88000, "long_liq_usd": 142000000, "short_liq_usd": 8000000 },
+    { "price": 85000, "long_liq_usd": 380000000, "short_liq_usd": 12000000 }
+  ]
+}
+```
+
+**LLM-3b usage:** Positioning bias prompt includes the top-3 highest-density liquidation levels per symbol. LLM can cite cascade risk zones ("$85K long cluster — large liquidation magnet") in its directional analysis.
+
+**Acceptance Criteria:**
+- [ ] Heatmap data stored every 15 minutes for all 4 assets
+- [ ] `liquidation_heatmap` migration is idempotent (`IF NOT EXISTS`)
+- [ ] Redis key `heatmap:latest:{sym}usdt` written with TTL 1800s
+- [ ] Coinglass down → LLM-3b skips heatmap section, no alert disruption
+- [ ] No API key logged
+
+**Tests:**
+- [ ] Unit: mock Coinglass response → verify top-N levels selected and stored correctly
+- [ ] Unit: empty response → graceful no-op, no crash
+- [ ] Mock failure → Redis key absent → LLM-3b context builder handles missing key cleanly
+
+---
+
 ## Epic 13: News Classification & Positioning Bias
 
 ---
