@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
 from alerts.config import AlertParams  # noqa: E402
+from alerts.publisher import setup_stream  # noqa: E402
 from alerts.engine import AlertEngine  # noqa: E402
 from alerts.leadership_rotation import LeadershipRotationEvaluator  # noqa: E402
 from alerts.vol_expansion import VolExpansionEvaluator  # noqa: E402
@@ -78,6 +79,10 @@ async def main() -> None:
     # Connect to NATS for alert publishing (AL-1+)
     nc = await nats_client.connect(settings.nats_url)
     log.info("processor.nats_connected")
+
+    # Create ALERTS JetStream stream — idempotent, safe to call on every startup
+    await setup_stream(nc)
+    log.info("processor.nats_stream_ready", stream="ALERTS")
 
     # Connect to Redis for feature caching
     redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)

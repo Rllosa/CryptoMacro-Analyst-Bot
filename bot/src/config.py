@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class BotSettings(BaseSettings):
@@ -13,6 +13,9 @@ class BotSettings(BaseSettings):
     discord_channel_bot_commands: int
     discord_channel_system_health: int
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Service connections
+    db_dsn: str = "postgresql://postgres:postgres@localhost:5432/cryptomacro"
+    redis_url: str = "redis://localhost:6379"
+    nats_url: str = "nats://localhost:4222"
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
