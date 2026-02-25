@@ -20,9 +20,13 @@ from alerts.breakout import (
     BreakoutEvaluator,
     BreakoutParams,
 )
+from alerts.symbol_multipliers import SymbolMultipliers
 
 _THRESHOLDS_PATH = str(
     Path(__file__).parents[2] / "configs" / "thresholds.yaml"
+)
+_SYMBOLS_PATH = str(
+    Path(__file__).parents[2] / "configs" / "symbols.yaml"
 )
 
 _CYCLE_TIME = datetime(2026, 2, 21, tzinfo=timezone.utc)
@@ -40,6 +44,7 @@ def _run(coro):
 def _settings_stub():
     s = MagicMock()
     s.thresholds_path = _THRESHOLDS_PATH
+    s.symbols_path = _SYMBOLS_PATH
     s.feature_interval_secs = 300
     return s
 
@@ -221,3 +226,50 @@ def test_missing_volume_zscore_no_calls() -> None:
     _run(ev._evaluate_symbol("BTCUSDT", _CYCLE_TIME))
 
     engine.evaluate_and_fire.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Multiplier tests
+# ---------------------------------------------------------------------------
+
+
+def test_multiplier_raises_volume_threshold_blocks_alert() -> None:
+    """Multiplier 2.5 raises volume_zscore_min from 1.0 to 2.5.
+
+    volume_zscore=1.2 clears the base threshold (≥ 1.0) but fails the scaled
+    one (< 1.0×2.5 = 2.5) → conditions_met=False for all directions.
+    """
+    ev, engine = _make_evaluator()
+    ev._redis = _redis_with(_base_features(breakout_24h_high=1.0, volume_zscore=1.2))
+    ev._multipliers = SymbolMultipliers(multipliers={"BTCUSDT": 2.5})
+    _run(ev._evaluate_symbol("BTCUSDT", _CYCLE_TIME))
+
+    for call in engine.evaluate_and_fire.call_args_list:
+        assert call.kwargs["conditions_met"] is False
+
+
+def test_multiplier_1_0_fires_at_base_threshold() -> None:
+    """Multiplier 1.0 leaves effective threshold unchanged.
+
+    volume_zscore=1.0 (exactly at base threshold) → conditions_met=True for
+    the high_24h direction.
+    """
+    ev, engine = _make_evaluator()
+    ev._redis = _redis_with(_base_features(breakout_24h_high=1.0, volume_zscore=1.0))
+    ev._multipliers = SymbolMultipliers(multipliers={"BTCUSDT": 1.0})
+    _run(ev._evaluate_symbol("BTCUSDT", _CYCLE_TIME))
+
+    calls = engine.evaluate_and_fire.call_args_list
+    high_24h = next(c for c in calls if c.kwargs["direction"] == "high_24h")
+    assert high_24h.kwargs["conditions_met"] is True
+
+
+def test_multiplier_applied_per_symbol() -> None:
+    """SOL multiplier 1.5 blocks alert when volume_zscore=1.2 (< 1.0×1.5 = 1.5)."""
+    ev, engine = _make_evaluator()
+    ev._redis = _redis_with(_base_features(breakout_24h_high=1.0, volume_zscore=1.2))
+    ev._multipliers = SymbolMultipliers(multipliers={"SOLUSDT": 1.5})
+    _run(ev._evaluate_symbol("SOLUSDT", _CYCLE_TIME))
+
+    for call in engine.evaluate_and_fire.call_args_list:
+        assert call.kwargs["conditions_met"] is False

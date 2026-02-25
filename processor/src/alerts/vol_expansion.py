@@ -23,6 +23,7 @@ import structlog
 import yaml
 
 from alerts.engine import AlertEngine
+from alerts.symbol_multipliers import SymbolMultipliers
 from backfill import SYMBOLS
 from config import Settings
 
@@ -144,6 +145,7 @@ class VolExpansionEvaluator:
         self._redis = redis
         self._engine = engine
         self._params = VolExpansionParams.load(settings.thresholds_path)
+        self._multipliers = SymbolMultipliers.load(settings.symbols_path)
         self._shutdown = asyncio.Event()
         self._rv_buffers: dict[str, deque[float]] = {
             sym: deque(maxlen=_RV_BUFFER_SIZE) for sym in SYMBOLS
@@ -210,6 +212,8 @@ class VolExpansionEvaluator:
         rv_1h_zscore = _compute_rv_zscore(buf, rv_1h)
         buf.append(rv_1h)
 
+        multiplier = self._multipliers.get(symbol)
+
         # Evaluate "up" and "down" independently.
         for direction, breakout_any, is_24h in (
             (
@@ -225,16 +229,20 @@ class VolExpansionEvaluator:
         ):
             conditions_met = (
                 rv_1h_zscore is not None
-                and rv_1h_zscore >= self._params.rv_1h_zscore_threshold
-                and volume_zscore >= self._params.volume_zscore_threshold
+                and rv_1h_zscore >= self._params.rv_1h_zscore_threshold * multiplier
+                and volume_zscore >= self._params.volume_zscore_threshold * multiplier
                 and breakout_any
             )
 
-            severity = (
-                _classify_severity(self._params, rv_1h_zscore, volume_zscore, is_24h)
-                if conditions_met
-                else "MEDIUM"
-            )
+            severity = "MEDIUM"
+            if conditions_met:
+                if (
+                    rv_1h_zscore is not None
+                    and rv_1h_zscore >= self._params.high_rv_1h_zscore * multiplier
+                    and volume_zscore >= self._params.high_volume_zscore * multiplier
+                    and is_24h
+                ):
+                    severity = "HIGH"
 
             await self._engine.evaluate_and_fire(
                 alert_type=_ALERT_TYPE,
