@@ -56,19 +56,19 @@ def _mock_pool():
 
 
 def _funding_raw(exchange: str = "Binance", rate: float = 0.0001) -> dict:
-    return {"exchangeName": exchange, "fundingRate": rate}
+    return {"exchange": exchange, "fundingRate": rate}
 
 
 def _oi_raw(exchange: str = "Binance", oi: float = 5_000_000_000.0) -> dict:
-    return {"exchangeName": exchange, "openInterestUsd": oi}
+    return {"exchange": exchange, "openInterestUsd": oi}
 
 
 def _liq_raw(exchange: str = "Binance", liq: float = 10_000_000.0) -> dict:
-    return {"exchangeName": exchange, "liquidationUsd1h": liq}
+    return {"exchange": exchange, "liquidationUsd": liq}
 
 
 def _ls_raw(exchange: str = "Binance", long: float = 0.55, short: float = 0.45) -> dict:
-    return {"exchangeName": exchange, "longRatio": long, "shortRatio": short}
+    return {"exchange": exchange, "longRatio": long, "shortRatio": short}
 
 
 def _api_resp(items: list[dict]) -> dict:
@@ -92,13 +92,13 @@ def test_funding_entry_parses_exchange_and_rate():
 
 
 def test_funding_entry_missing_rate_is_none():
-    e = FundingEntry.model_validate({"exchangeName": "OKX"})
+    e = FundingEntry.model_validate({"exchange": "OKX"})
     assert e.exchange == "OKX"
     assert e.funding_rate is None
 
 
 def test_funding_entry_ignores_extra_fields():
-    e = FundingEntry.model_validate({"exchangeName": "Bybit", "fundingRate": 0.0002, "unknown": 99})
+    e = FundingEntry.model_validate({"exchange": "Bybit", "fundingRate": 0.0002, "unknown": 99})
     assert e.exchange == "Bybit"
     assert not hasattr(e, "unknown")
 
@@ -115,7 +115,7 @@ def test_oi_entry_parses_exchange_and_oi():
 
 
 def test_oi_entry_missing_oi_is_none():
-    e = OIEntry.model_validate({"exchangeName": "OKX"})
+    e = OIEntry.model_validate({"exchange": "OKX"})
     assert e.open_interest_usd is None
 
 
@@ -131,7 +131,7 @@ def test_liq_entry_parses_exchange_and_liq():
 
 
 def test_liq_entry_missing_liq_is_none():
-    e = LiqEntry.model_validate({"exchangeName": "Bybit"})
+    e = LiqEntry.model_validate({"exchange": "Bybit"})
     assert e.liq_usd_1h is None
 
 
@@ -148,7 +148,7 @@ def test_long_short_entry_parses_both_ratios():
 
 
 def test_long_short_entry_missing_ratios_are_none():
-    e = LongShortEntry.model_validate({"exchangeName": "OKX"})
+    e = LongShortEntry.model_validate({"exchange": "OKX"})
     assert e.long_account_ratio is None
     assert e.short_account_ratio is None
 
@@ -219,10 +219,10 @@ def _mock_session_with_responses(responses: dict[str, dict]) -> MagicMock:
 def test_fetch_symbol_returns_one_row_per_exchange():
     collector = _make_collector()
     session = _mock_session_with_responses({
-        "/funding":         _api_resp([_funding_raw("Binance", 0.0001)]),
-        "/open_interest":   _api_resp([_oi_raw("Binance", 5e9)]),
-        "/liquidation":     _api_resp([_liq_raw("Binance", 1e7)]),
-        "/long_short_ratio": _api_resp([_ls_raw("Binance", 0.55, 0.45)]),
+        "/futures/fundingRate/exchange-list":                  _api_resp([_funding_raw("Binance", 0.0001)]),
+        "/futures/openInterest/exchange-list":                 _api_resp([_oi_raw("Binance", 5e9)]),
+        "/futures/liquidation/exchange-list":                  _api_resp([_liq_raw("Binance", 1e7)]),
+        "/futures/global-long-short-account-ratio/history":    _api_resp([_ls_raw("Binance", 0.55, 0.45)]),
     })
     rows = _run(collector._fetch_symbol(session, "BTC", _NOW))
     assert len(rows) == 1
@@ -240,10 +240,10 @@ def test_fetch_symbol_returns_one_row_per_exchange():
 def test_fetch_symbol_multiple_exchanges_returns_multiple_rows():
     collector = _make_collector()
     session = _mock_session_with_responses({
-        "/funding":         _api_resp([_funding_raw("Binance"), _funding_raw("OKX", 0.0002)]),
-        "/open_interest":   _api_resp([_oi_raw("Binance"), _oi_raw("OKX", 3e9)]),
-        "/liquidation":     _api_resp([_liq_raw("Binance"), _liq_raw("OKX", 5e6)]),
-        "/long_short_ratio": _api_resp([_ls_raw("Binance"), _ls_raw("OKX", 0.52, 0.48)]),
+        "/futures/fundingRate/exchange-list":                  _api_resp([_funding_raw("Binance"), _funding_raw("OKX", 0.0002)]),
+        "/futures/openInterest/exchange-list":                 _api_resp([_oi_raw("Binance"), _oi_raw("OKX", 3e9)]),
+        "/futures/liquidation/exchange-list":                  _api_resp([_liq_raw("Binance"), _liq_raw("OKX", 5e6)]),
+        "/futures/global-long-short-account-ratio/history":    _api_resp([_ls_raw("Binance"), _ls_raw("OKX", 0.52, 0.48)]),
     })
     rows = _run(collector._fetch_symbol(session, "ETH", _NOW))
     assert len(rows) == 2
@@ -255,10 +255,10 @@ def test_fetch_symbol_exchange_in_one_endpoint_only_produces_nulls():
     """An exchange appearing in only /funding should have None for OI/liq/ls."""
     collector = _make_collector()
     session = _mock_session_with_responses({
-        "/funding":         _api_resp([_funding_raw("Bybit", 0.0003)]),
-        "/open_interest":   _api_resp([]),
-        "/liquidation":     _api_resp([]),
-        "/long_short_ratio": _api_resp([]),
+        "/futures/fundingRate/exchange-list":                  _api_resp([_funding_raw("Bybit", 0.0003)]),
+        "/futures/openInterest/exchange-list":                 _api_resp([]),
+        "/futures/liquidation/exchange-list":                  _api_resp([]),
+        "/futures/global-long-short-account-ratio/history":    _api_resp([]),
     })
     rows = _run(collector._fetch_symbol(session, "SOL", _NOW))
     assert len(rows) == 1
@@ -273,10 +273,10 @@ def test_fetch_symbol_exchange_in_one_endpoint_only_produces_nulls():
 def test_fetch_symbol_empty_responses_return_no_rows():
     collector = _make_collector()
     session = _mock_session_with_responses({
-        "/funding":         _api_resp([]),
-        "/open_interest":   _api_resp([]),
-        "/liquidation":     _api_resp([]),
-        "/long_short_ratio": _api_resp([]),
+        "/futures/fundingRate/exchange-list":                  _api_resp([]),
+        "/futures/openInterest/exchange-list":                 _api_resp([]),
+        "/futures/liquidation/exchange-list":                  _api_resp([]),
+        "/futures/global-long-short-account-ratio/history":    _api_resp([]),
     })
     rows = _run(collector._fetch_symbol(session, "HYPE", _NOW))
     assert rows == []

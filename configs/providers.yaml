@@ -163,14 +163,15 @@ yahoo_finance:
 # PRIORITY: Phase 1.5 — implement immediately after FE-6.
 # Unlocks: DELEVERAGING regime, CROWDED_LEVERAGE alert, FE-4 derivatives features.
 coinglass:
-  base_url: "https://open-api.coinglass.com/public/v2"
+  base_url: "https://open-api-v4.coinglass.com/api"
+  auth_header: "CG-API-KEY"
 
   # Endpoints
   endpoints:
-    funding_rate: "/funding"
-    open_interest: "/open_interest"
-    liquidations: "/liquidation"
-    long_short_ratio: "/long_short_ratio"
+    funding_rate: "/futures/fundingRate/exchange-list"
+    open_interest: "/futures/openInterest/exchange-list"
+    liquidations: "/futures/liquidation/exchange-list"     # range=1h added at call time
+    long_short_ratio: "/futures/global-long-short-account-ratio/history"
 
   # Supported exchanges
   exchanges:
