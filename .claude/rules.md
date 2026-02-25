@@ -544,7 +544,7 @@ In parallel:
 
 ---
 
-### Phase 1–2 — Crypto Alerts End-to-End (Weeks 1–2)
+### Phase 1 — Core Crypto Alerts (Weeks 1–2)
 
 ```
 DI-1:  Binance WebSocket Collector (Rust)
@@ -579,7 +579,7 @@ FIX-2: Per-asset threshold multipliers in symbols.yaml (HYPE calibration)
 
 ---
 
-### Phase 2 continued — Macro + Regime + LLM (Weeks 3–4)
+### Phase 2 — Macro + Regime + LLM (Weeks 3–4)
 
 ```
 DI-4:   Yahoo Finance Collector (VIX + DXY — only macro inputs needed for MVP)
@@ -681,24 +681,55 @@ ST-1:   TimescaleDB Performance & Query Utilities
 ### Dependency Graph (Critical Path)
 
 ```
+Phase 1 — Core Crypto Alerts:
+
 F-3 → F-4 → DI-1 → DI-2 → FE-1 → AL-1 → AL-2 → QA-1
                                   ↘ FE-2 → AL-3
-                                         → AL-5 (needs FE-6)
-                                         → AL-6 (needs FE-3)
+                                         → AL-4
+                   AL-11 (alert routing — after AL-1)
+                   DEL-1 → DEL-2 (alert embed — after AL-1)
+                   OPS-1 (health API — after AL-1)
 
-Phase 1.5:
-DI-5 → FE-4 → AL-7
-            → AL-8 → LLM-4
+Phase 1.5 — Derivatives & Threshold Fixes:
+
+DI-5 → FE-4 → AL-7 (CROWDED_LEVERAGE — Phase 3)
+            → AL-8 → LLM-4 (DELEVERAGING — Phase 3)
 FIX-1: classifier.py (rv_4h_zscore threshold)
 FIX-2: symbols.yaml (per-asset multipliers)
 
-Phase 2:
-DI-4 → FE-3 → FE-6 [DONE] → AL-5
-DI-6 (Deribit DVOL) → FE-3/cross_features
-DI-7 (CoinGecko BTC.D) → cross_features
-DI-10 (Liquidation Heatmap) → LLM-3b
+Phase 2 — Macro + Regime + LLM:
 
-Phase 4:
+FE-6 (done) ─────────────────────────────────────────── → AL-5 (REGIME_SHIFT)
+
+DI-4 (done) → FE-3 → cross_features:latest ──────────── → AL-6 (CORRELATION_BREAK)
+               │      (macro_stress, vix,               → OPS-2 (Macro Degrade)
+               │       dxy_momentum,                    → FE-6 reads macro_stress at runtime
+               │       btc_spx_correlation)               → RISK_OFF_STRESS regime activates
+
+DI-6 (Deribit DVOL) → deribit_dvol table
+                     → cross_features (btc_dvol, btc_dvol_change_pct)
+                       → additional signal for RISK_OFF_STRESS + VOL_EXPANSION
+
+DI-7 (CoinGecko BTC.D) → market_global table
+                        → cross_features (btc_dominance)
+                          → RISK_ON_TREND + CHOP_RANGE signal
+
+DI-8 (Cryptopanic) ─────────────────┐
+                                     ↓
+LLM-2 (Claude Client) ─── → LLM-2b (Async News Classifier) → AL-12 (NEWS_EVENT)
+                   └──── → LLM-3 → LLM-3b → DEL-3 (Discord Daily Brief)
+                                     ↑
+DI-10 (Liq. Heatmap) ───────────────┘ (context enrichment)
+
+LLM-1 (Context Builder) → LLM-2
+
+Phase 3 — Derivatives Alerts:
+
+FE-4 (done) → AL-7 → LLM-4
+            → AL-8 → LLM-4
+
+Phase 4 — On-Chain Intelligence:
+
 F-2 → DI-9 → FE-5 → AL-9
                    → AL-10
 
