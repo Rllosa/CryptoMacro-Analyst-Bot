@@ -1031,7 +1031,7 @@ Evaluation order (fastest rejection first):
 
 ---
 
-### AL-4: Alert — Breakout Detection
+### AL-4: Alert — BREAKOUT
 
 **Goal:** Alert on price breakouts beyond 4h/24h ranges with volume confirmation.
 
