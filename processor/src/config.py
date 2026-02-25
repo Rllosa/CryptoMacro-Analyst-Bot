@@ -50,6 +50,7 @@ class Settings(BaseSettings):
         alias="COINGLASS_BASE_URL",
     )
     coinglass_poll_interval_secs: int = Field(default=300, alias="COINGLASS_POLL_INTERVAL_SECS")
+    yahoo_poll_interval_secs: int = Field(default=300, alias="YAHOO_POLL_INTERVAL_SECS")
 
     @property
     def db_dsn(self) -> str:
