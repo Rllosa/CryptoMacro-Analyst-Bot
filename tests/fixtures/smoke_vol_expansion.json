@@ -1,0 +1,24 @@
+{
+  "note": "Crafted fixture for QA-1 smoke test — VOL_EXPANSION HIGH severity. time replaced at runtime.",
+  "time": "REPLACED_AT_RUNTIME",
+  "features": {
+    "rv_1h": 0.06,
+    "volume_zscore": 2.0,
+    "breakout_4h_high": 1,
+    "breakout_24h_high": 1,
+    "breakout_4h_low": 0,
+    "breakout_24h_low": 0,
+    "rv_4h_zscore": 1.2,
+    "r_5m": 0.003,
+    "r_1h": 0.025,
+    "rsi_14": 72.0,
+    "macd": 150.0,
+    "macd_signal": 100.0,
+    "bb_upper": 98500.0,
+    "bb_middle": 96000.0,
+    "bb_lower": 93500.0,
+    "atr_14": 800.0,
+    "ema_slope": 0.002,
+    "volume": 1500000
+  }
+}
