@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,6 +38,7 @@ from derivatives.indicators import (
 # ---------------------------------------------------------------------------
 
 _NOW = datetime(2026, 2, 24, 12, 0, 0, tzinfo=timezone.utc)
+_THRESHOLDS_PATH = str(Path(__file__).parents[2] / "configs" / "thresholds.yaml")
 
 
 def _run(coro):
@@ -46,7 +48,7 @@ def _run(coro):
 def _settings_stub(interval: int = 300):
     s = MagicMock()
     s.feature_interval_secs = interval
-    s.thresholds_path = "configs/thresholds.yaml"
+    s.thresholds_path = _THRESHOLDS_PATH
     return s
 
 
@@ -114,7 +116,7 @@ def test_derivative_params_from_thresholds_parses_all_fields():
 
 
 def test_derivative_params_load_reads_yaml():
-    p = DerivativeParams.load("configs/thresholds.yaml")
+    p = DerivativeParams.load(_THRESHOLDS_PATH)
     assert p.funding_zscore_lookback_days > 0
     assert p.funding_zscore_min_samples > 0
     assert p.oi_drop_threshold_pct < 0
