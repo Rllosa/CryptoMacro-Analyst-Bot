@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Coinglass (DI-5)
     coinglass_api_key: str = Field(default="", alias="COINGLASS_API_KEY")
     coinglass_base_url: str = Field(
-        default="https://open-api.coinglass.com/public/v2",
+        default="https://open-api-v4.coinglass.com/api",
         alias="COINGLASS_BASE_URL",
     )
     coinglass_poll_interval_secs: int = Field(default=300, alias="COINGLASS_POLL_INTERVAL_SECS")

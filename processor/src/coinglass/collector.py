@@ -88,7 +88,7 @@ class CoinglassCollector:
     async def _run_cycle(self) -> None:
         """One full poll: fetch all symbols concurrently, then upsert."""
         now = datetime.now(tz=timezone.utc)
-        headers = {"X-API-KEY": self._settings.coinglass_api_key}
+        headers = {"CG-API-KEY": self._settings.coinglass_api_key}
 
         async with aiohttp.ClientSession(headers=headers) as session:
             results = await asyncio.gather(
@@ -117,28 +117,29 @@ class CoinglassCollector:
         now: datetime,
     ) -> list[tuple]:
         """
-        Fetch /funding, /open_interest, /liquidation, /long_short_ratio for one
+        Fetch funding, open interest, liquidation, and long/short ratio for one
         symbol concurrently.  Merge per-exchange data into DB-ready row tuples.
 
         Returns a list of 8-tuples ready for upsert_derivatives().
         """
         base = self._settings.coinglass_base_url
         params = {"symbol": symbol}
+        liq_params = {"symbol": symbol, "range": "1h"}
         timeout = aiohttp.ClientTimeout(total=10)
 
-        async def _get(endpoint: str) -> Any:
+        async def _get(endpoint: str, ep_params: dict) -> Any:
             async with self._sem:
                 async with session.get(
-                    f"{base}{endpoint}", params=params, timeout=timeout
+                    f"{base}{endpoint}", params=ep_params, timeout=timeout
                 ) as resp:
                     resp.raise_for_status()
                     return await resp.json()
 
         funding_resp, oi_resp, liq_resp, ls_resp = await asyncio.gather(
-            _get("/funding"),
-            _get("/open_interest"),
-            _get("/liquidation"),
-            _get("/long_short_ratio"),
+            _get("/futures/fundingRate/exchange-list", params),
+            _get("/futures/openInterest/exchange-list", params),
+            _get("/futures/liquidation/exchange-list", liq_params),
+            _get("/futures/global-long-short-account-ratio/history", params),
         )
 
         # Build per-exchange lookup dicts from each endpoint's data list.

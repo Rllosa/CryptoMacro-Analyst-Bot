@@ -10,7 +10,7 @@ class FundingEntry(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    exchange: str = Field(alias="exchangeName")
+    exchange: str = Field(alias="exchange")
     funding_rate: Optional[float] = Field(None, alias="fundingRate")
 
 
@@ -19,7 +19,7 @@ class OIEntry(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    exchange: str = Field(alias="exchangeName")
+    exchange: str = Field(alias="exchange")
     open_interest_usd: Optional[float] = Field(None, alias="openInterestUsd")
 
 
@@ -28,8 +28,8 @@ class LiqEntry(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    exchange: str = Field(alias="exchangeName")
-    liq_usd_1h: Optional[float] = Field(None, alias="liquidationUsd1h")
+    exchange: str = Field(alias="exchange")
+    liq_usd_1h: Optional[float] = Field(None, alias="liquidationUsd")
 
 
 class LongShortEntry(BaseModel):
@@ -37,6 +37,6 @@ class LongShortEntry(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    exchange: str = Field(alias="exchangeName")
+    exchange: str = Field(alias="exchange")
     long_account_ratio: Optional[float] = Field(None, alias="longRatio")
     short_account_ratio: Optional[float] = Field(None, alias="shortRatio")
