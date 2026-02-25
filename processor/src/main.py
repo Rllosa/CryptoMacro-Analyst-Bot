@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 CryptoMacro Analyst Bot — Processor Service
-Phase 1 (Weeks 1-3) — DI-2, FE-1, FE-2, AL-1
+Phase 1–1.5 (Weeks 1-3) — DI-2, DI-5, FE-1, FE-2, AL-1
 
 Entry point: loads config, runs backfill on startup, then runs the
-NATS-to-TimescaleDB normalizer, per-asset feature engine, and cross-asset
-feature engine concurrently.  AlertEngine is initialized here and passed to
-alert evaluators (AL-2+) — it has no run loop of its own.
+NATS-to-TimescaleDB normalizer, per-asset feature engine, cross-asset
+feature engine, and Coinglass derivatives collector concurrently.
+AlertEngine is initialized here and passed to alert evaluators (AL-2+)
+— it has no run loop of its own.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from alerts.leadership_rotation import LeadershipRotationEvaluator  # noqa: E402
 from alerts.vol_expansion import VolExpansionEvaluator  # noqa: E402
 from regime.engine import RegimeClassifier  # noqa: E402
 from backfill import run_backfill  # noqa: E402
+from coinglass.collector import CoinglassCollector  # noqa: E402
 from config import Settings  # noqa: E402
 from cross_features.engine import CrossFeatureEngine  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
@@ -90,6 +92,7 @@ async def main() -> None:
     cross_engine = CrossFeatureEngine(settings, pool, redis_client)
     # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
     alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
+    coinglass = CoinglassCollector(settings, pool)
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
     breakout = BreakoutEvaluator(settings, redis_client, alert_engine)
@@ -103,6 +106,7 @@ async def main() -> None:
         normalizer.request_shutdown()
         feature_engine.request_shutdown()
         cross_engine.request_shutdown()
+        coinglass.request_shutdown()
         vol_expansion.request_shutdown()
         leadership_rotation.request_shutdown()
         breakout.request_shutdown()
@@ -116,6 +120,7 @@ async def main() -> None:
         normalizer.run(),
         feature_engine.run(),
         cross_engine.run(),
+        coinglass.run(),
         vol_expansion.run(),
         leadership_rotation.run(),
         breakout.run(),

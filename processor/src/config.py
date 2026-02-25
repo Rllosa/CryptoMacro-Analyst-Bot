@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     thresholds_path: str = Field(default="/app/configs/thresholds.yaml", alias="THRESHOLDS_PATH")
     feature_interval_secs: int = Field(default=300, alias="FEATURE_INTERVAL_SECS")
 
+    # Coinglass (DI-5)
+    coinglass_api_key: str = Field(default="", alias="COINGLASS_API_KEY")
+    coinglass_base_url: str = Field(
+        default="https://open-api.coinglass.com/public/v2",
+        alias="COINGLASS_BASE_URL",
+    )
+    coinglass_poll_interval_secs: int = Field(default=300, alias="COINGLASS_POLL_INTERVAL_SECS")
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
