@@ -57,6 +57,7 @@ def _params_with(
     condition_weight: float = 0.15,
     min_confidence: float = 0.4,
     regimes: dict | None = None,
+    volatility_regime_high_zscore_threshold: float = 0.5,
 ) -> RegimeParams:
     return RegimeParams(
         base_weight=base_weight,
@@ -66,6 +67,7 @@ def _params_with(
         min_confidence=min_confidence,
         regimes=regimes or {},
         tight_bb_bandwidth_max=0.03,
+        volatility_regime_high_zscore_threshold=volatility_regime_high_zscore_threshold,
     )
 
 
@@ -273,7 +275,35 @@ def test_params_loads_from_thresholds_yaml() -> None:
     assert params.zscore_bonus == pytest.approx(0.1)
     assert params.min_confidence == pytest.approx(0.4)
     assert params.tight_bb_bandwidth_max == pytest.approx(0.03)
+    assert params.volatility_regime_high_zscore_threshold == pytest.approx(0.5)
     assert len(params.regimes) == 5
+
+
+# ---------------------------------------------------------------------------
+# _build_regime_inputs — volatility_regime threshold edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_build_regime_inputs_zscore_below_threshold_is_low() -> None:
+    """0.3 is above the old broken threshold (0) but below the new threshold (0.5).
+    Must produce 'low' after the fix."""
+    params = _params_with()  # threshold=0.5
+    out = _build_regime_inputs({}, {}, rv_4h_zscore=0.3, params=params)
+    assert out["volatility_regime"] == "low"
+
+
+def test_build_regime_inputs_zscore_at_threshold_is_low() -> None:
+    """Exactly at 0.5 — not strictly greater — must produce 'low'."""
+    params = _params_with()
+    out = _build_regime_inputs({}, {}, rv_4h_zscore=0.5, params=params)
+    assert out["volatility_regime"] == "low"
+
+
+def test_build_regime_inputs_zscore_above_threshold_is_high() -> None:
+    """0.6 > 0.5 — must produce 'high'."""
+    params = _params_with()
+    out = _build_regime_inputs({}, {}, rv_4h_zscore=0.6, params=params)
+    assert out["volatility_regime"] == "high"
 
 
 # ---------------------------------------------------------------------------

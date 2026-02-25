@@ -98,7 +98,7 @@ def _build_regime_inputs(
 
     return {
         "btc_trend": per_sym.get("r_1h", 0.0),
-        "volatility_regime": "high" if rv_4h_zscore > 0 else "low",
+        "volatility_regime": "high" if rv_4h_zscore > params.volatility_regime_high_zscore_threshold else "low",
         "rv_4h_zscore": rv_4h_zscore,
         "macro_stress": cross.get("macro_stress", 0.0),
         "volume_zscore": per_sym.get("volume_zscore", 0.0),

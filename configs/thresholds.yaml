@@ -158,6 +158,10 @@ regime_classifier:
   # Bollinger Band bandwidth threshold for "tight" price range classification
   tight_bb_bandwidth_max: 0.03    # bb_bandwidth < 3% → "tight" (used by CHOP_RANGE)
 
+  # z-score threshold above which volatility is classified as "high"
+  # > 0.5 ≈ "meaningfully above baseline" (~30% of the time vs ~50% for > 0)
+  volatility_regime_high_zscore_threshold: 0.5
+
   # Regime definitions with conditions
   regimes:
     # Regime 1: RISK_ON_TREND
