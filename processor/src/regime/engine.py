@@ -127,6 +127,14 @@ class RegimeClassifier:
         raw_cross = await self._redis.get("cross_features:latest")
         cross: dict[str, Any] = json.loads(raw_cross)["features"] if raw_cross else {}
 
+        # Inject FE-4 derivatives features — populates funding_zscore, liquidations_1h_usd, oi_drop_1h
+        raw_deriv = await self._redis.get("derivatives:latest:btcusdt")
+        if raw_deriv is not None:
+            deriv = json.loads(raw_deriv)["features"]
+            per_sym["funding_zscore"]    = deriv.get("funding_zscore", 0.0) or 0.0
+            cross["liquidations_1h_usd"] = deriv.get("liquidations_1h_usd", 0.0) or 0.0
+            cross["oi_drop_1h"]          = deriv.get("oi_drop_1h", 0.0) or 0.0
+
         inputs = _build_regime_inputs(per_sym, cross, rv_4h_zscore, self._params)
         result = classify_regime(inputs, self._params)
 

@@ -379,6 +379,15 @@ feature_params:
   correlation_7d_window: 7            # 7 days
 
 # =============================================================================
+# DERIVATIVES FEATURE COMPUTATION PARAMETERS
+# Used by DerivativesEngine (FE-4) for indicator calculation
+# =============================================================================
+derivatives_params:
+  funding_zscore_lookback_days: 90    # Days of history for z-score computation
+  funding_zscore_min_samples: 12      # Min time-buckets before z-score is valid
+  oi_drop_threshold_pct: -0.05        # -5% OI drop → oi_drop_1h = 1.0
+
+# =============================================================================
 # MACRO STRESS COMPOSITE WEIGHTS
 # Weights for macro stress calculation (0-100 scale)
 # =============================================================================
