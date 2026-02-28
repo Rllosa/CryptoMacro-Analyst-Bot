@@ -87,9 +87,8 @@ def _build_regime_inputs(
     """
     Translate raw FE-1/FE-2 feature names to the semantic names in thresholds.yaml.
 
-    Fields not yet available (FE-3/FE-4 data: vix, dxy_momentum, btc_spx_correlation,
-    funding_zscore, liquidations_1h_usd, oi_drop_1h) default to 0.0 until those
-    feature engines ship.
+    btc_spx_correlation defaults to 0.0 — daily BTC/equity correlation window not yet
+    implemented (deferred to a future task).
     """
     bb_upper = per_sym.get("bb_upper", 0.0)
     bb_lower = per_sym.get("bb_lower", 0.0)
@@ -110,7 +109,7 @@ def _build_regime_inputs(
             per_sym.get("breakout_24h_low", 0.0),
         ],
         "candle_size": per_sym.get("atr_ratio", 0.0),
-        # FE-3/FE-4 stubs — default to 0.0
+        # btc_spx_correlation stub — daily correlation window not yet implemented
         "vix": cross.get("vix", 0.0),
         "btc_spx_correlation": cross.get("btc_spx_correlation", 0.0),
         "dxy_momentum": cross.get("dxy_momentum", 0.0),
