@@ -96,6 +96,9 @@ regime_shift:
   # Do not fire below this confidence (uncertain regime)
   uncertain_threshold: 0.4
 
+  # Consecutive uncertain cycles required to fire INDETERMINATE alert
+  indeterminate_streak_threshold: 5   # ≥5 cycles (25 min) of regime=None → MEDIUM alert
+
   # Severity (always HIGH for regime shifts)
   severity: "HIGH"
 
