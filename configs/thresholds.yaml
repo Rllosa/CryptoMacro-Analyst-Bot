@@ -399,30 +399,21 @@ derivatives_params:
 # Weights for macro stress calculation (0-100 scale)
 # =============================================================================
 macro_stress:
-  # Component weights (must sum to 1.0)
+  # Phase 2 inputs: VIX + DXY momentum only
+  # yield_curve and equity_drawdown deferred to Phase 5+ (requires FRED DI-3)
   weights:
-    vix_level: 0.35                   # VIX normalized to 0-100
-    yield_curve: 0.25                 # 2Y-10Y spread (inverted = stress)
-    dxy_momentum: 0.20                # DXY rate of change
-    equity_drawdown: 0.20             # SPX drawdown from recent high
+    vix_level: 0.6                    # Primary stress signal — VIX is the most direct fear gauge
+    dxy_momentum: 0.4                 # DXY strengthening → capital flight to safety → risk-off
 
-  # Normalization bounds
+  # Normalization bounds (map raw value → 0-100 contribution)
   normalization:
     vix:
-      min: 10                         # VIX = 10 → stress = 0
-      max: 40                         # VIX = 40 → stress = 100
-
-    yield_curve_spread:
-      positive: 0                     # Normal curve → stress = 0
-      inverted: 100                   # Inverted curve → stress = 100
+      min: 10                         # VIX = 10 → contribution = 0 (calm market)
+      max: 40                         # VIX = 40 → contribution = 100 (extreme fear)
 
     dxy_momentum:
-      min: -5                         # -5% → stress = 0
-      max: 5                          # +5% → stress = 100
-
-    equity_drawdown:
-      min: 0                          # 0% drawdown → stress = 0
-      max: 20                         # 20% drawdown → stress = 100
+      min: -5                         # DXY -5% 5-day change → contribution = 0 (USD weakening, risk-on)
+      max: 5                          # DXY +5% 5-day change → contribution = 100 (USD surging, risk-off)
 
 # =============================================================================
 # PHASE 1-2 ONLY NOTE

@@ -168,15 +168,15 @@ class TestComputeRsAndZscore:
 # ---------------------------------------------------------------------------
 
 class TestComputeAllCrossFeatures:
-    def test_all_seven_features_returned(self, default_params: FeatureParams) -> None:
-        """Full data → dict contains exactly 7 keys (3 RS, 3 z-score, macro_stress)."""
+    def test_all_six_features_returned(self, default_params: FeatureParams) -> None:
+        """Full data → dict contains exactly 6 keys (3 RS, 3 z-score). macro_stress is
+        computed separately by CrossFeatureEngine via FE-3 and merged in after this call."""
         closes = _flat_closes()
         features = compute_all_cross_features(closes, default_params)
         expected_keys = {
             "eth_btc_rs", "eth_btc_rs_zscore",
             "sol_btc_rs", "sol_btc_rs_zscore",
             "hype_btc_rs", "hype_btc_rs_zscore",
-            "macro_stress",
         }
         assert set(features.keys()) == expected_keys
 
@@ -186,11 +186,6 @@ class TestComputeAllCrossFeatures:
         features = compute_all_cross_features(closes, default_params)
         for key in ("corr_btc_sp500", "corr_btc_dxy", "corr_btc_sp500_7d"):
             assert key not in features
-
-    def test_macro_stress_always_zero(self, default_params: FeatureParams) -> None:
-        """macro_stress is stubbed at 0.0 until FE-3."""
-        for closes in [_flat_closes(), _surge_eth_closes(), _decline_eth_closes()]:
-            assert compute_all_cross_features(closes, default_params)["macro_stress"] == 0.0
 
     def test_flat_prices_all_rs_zero(self, default_params: FeatureParams) -> None:
         """All symbols constant → RS = 0, z = 0 for all pairs."""

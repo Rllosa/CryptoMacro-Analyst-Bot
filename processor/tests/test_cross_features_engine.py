@@ -123,10 +123,6 @@ class TestVector1AllFlat:
         features = compute_all_cross_features(v1_closes, params)
         assert features["hype_btc_rs"] == pytest.approx(0.0, abs=1e-10)
 
-    def test_macro_stress_zero(self, v1_closes: pd.DataFrame, params: FeatureParams) -> None:
-        features = compute_all_cross_features(v1_closes, params)
-        assert features["macro_stress"] == 0.0
-
     def test_determinism(self, v1_closes: pd.DataFrame, params: FeatureParams) -> None:
         """Two identical calls produce identical output."""
         f1 = compute_all_cross_features(v1_closes, params)
