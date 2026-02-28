@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Deribit (DI-6)
     deribit_poll_interval_secs: int = Field(default=3600, alias="DERIBIT_POLL_INTERVAL_SECS")  # 1-hour DVOL resolution
 
+    # CoinGecko (DI-7)
+    coingecko_poll_interval_secs: int = Field(default=600, alias="COINGECKO_POLL_INTERVAL_SECS")  # 10-minute BTC.D polling
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
