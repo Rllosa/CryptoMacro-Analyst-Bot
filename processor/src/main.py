@@ -25,6 +25,7 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
+from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
 from alerts.regime_shift import RegimeShiftEvaluator  # noqa: E402
 from alerts.config import AlertParams  # noqa: E402
 from alerts.publisher import setup_stream  # noqa: E402
@@ -108,6 +109,7 @@ async def main() -> None:
     breakout = BreakoutEvaluator(settings, redis_client, alert_engine)
     regime_classifier = RegimeClassifier(settings, pool, redis_client)
     regime_shift = RegimeShiftEvaluator(settings, redis_client, alert_engine)
+    correlation_break = CorrelationBreakEvaluator(settings, redis_client, alert_engine)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -125,6 +127,7 @@ async def main() -> None:
         breakout.request_shutdown()
         regime_classifier.request_shutdown()
         regime_shift.request_shutdown()
+        correlation_break.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -142,6 +145,7 @@ async def main() -> None:
         breakout.run(),
         regime_classifier.run(),
         regime_shift.run(),
+        correlation_break.run(),
     )
 
     await nc.close()
