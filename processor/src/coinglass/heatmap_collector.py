@@ -236,8 +236,8 @@ def _parse_heatmap(
         rows.append((cycle_time, symbol, price, liq, "below"))
 
     payload = {
-        "above": [{"price_level": p, "liq_usd": l} for p, l in above_top],
-        "below": [{"price_level": p, "liq_usd": l} for p, l in below_top],
+        "above": [{"price_level": px, "liq_usd": liq} for px, liq in above_top],
+        "below": [{"price_level": px, "liq_usd": liq} for px, liq in below_top],
         "current_price": current_price,
         "timestamp": cycle_time.isoformat(),
     }
