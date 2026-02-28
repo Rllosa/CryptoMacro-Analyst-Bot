@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
 from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
 from coingecko.collector import CoinGeckoCollector  # noqa: E402
+from coinglass.heatmap_collector import CoinglassHeatmapCollector  # noqa: E402
 from cryptopanic.collector import CryptoppanicCollector  # noqa: E402
 from deribit.collector import DeribitCollector  # noqa: E402
 from alerts.regime_shift import RegimeShiftEvaluator  # noqa: E402
@@ -116,6 +117,7 @@ async def main() -> None:
     deribit = DeribitCollector(settings, pool, redis_client)
     coingecko = CoinGeckoCollector(settings, pool, redis_client)
     cryptopanic_news = CryptoppanicCollector(settings, pool, redis_client)
+    coinglass_heatmap = CoinglassHeatmapCollector(settings, pool, redis_client)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -137,6 +139,7 @@ async def main() -> None:
         deribit.request_shutdown()
         coingecko.request_shutdown()
         cryptopanic_news.request_shutdown()
+        coinglass_heatmap.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -158,6 +161,7 @@ async def main() -> None:
         deribit.run(),
         coingecko.run(),
         cryptopanic_news.run(),
+        coinglass_heatmap.run(),
     )
 
     await nc.close()

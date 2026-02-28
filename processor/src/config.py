@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     cryptopanic_poll_interval_secs: int = Field(default=300, alias="CRYPTOPANIC_POLL_INTERVAL_SECS")  # 5-minute news polling
     cryptopanic_max_age_minutes: int = Field(default=30, alias="CRYPTOPANIC_MAX_AGE_MINUTES")  # skip posts older than 30m
 
+    # Coinglass Heatmap (DI-10)
+    coinglass_heatmap_poll_interval_secs: int = Field(default=300, alias="COINGLASS_HEATMAP_POLL_INTERVAL_SECS")  # 5-minute heatmap polling
+    coinglass_heatmap_top_n: int = Field(default=20, alias="COINGLASS_HEATMAP_TOP_N")  # top N clusters per direction (above/below)
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
