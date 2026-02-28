@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     coinglass_poll_interval_secs: int = Field(default=300, alias="COINGLASS_POLL_INTERVAL_SECS")
     yahoo_poll_interval_secs: int = Field(default=300, alias="YAHOO_POLL_INTERVAL_SECS")
 
+    # Deribit (DI-6)
+    deribit_poll_interval_secs: int = Field(default=3600, alias="DERIBIT_POLL_INTERVAL_SECS")  # 1-hour DVOL resolution
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
