@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # CoinGecko (DI-7)
     coingecko_poll_interval_secs: int = Field(default=600, alias="COINGECKO_POLL_INTERVAL_SECS")  # 10-minute BTC.D polling
 
+    # Cryptopanic (DI-8)
+    cryptopanic_api_key: str = Field(default="", alias="CRYPTOPANIC_API_KEY")
+    cryptopanic_poll_interval_secs: int = Field(default=300, alias="CRYPTOPANIC_POLL_INTERVAL_SECS")  # 5-minute news polling
+    cryptopanic_max_age_minutes: int = Field(default=30, alias="CRYPTOPANIC_MAX_AGE_MINUTES")  # skip posts older than 30m
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
