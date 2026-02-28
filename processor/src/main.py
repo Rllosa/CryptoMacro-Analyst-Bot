@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
 from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
+from coingecko.collector import CoinGeckoCollector  # noqa: E402
 from deribit.collector import DeribitCollector  # noqa: E402
 from alerts.regime_shift import RegimeShiftEvaluator  # noqa: E402
 from alerts.config import AlertParams  # noqa: E402
@@ -112,6 +113,7 @@ async def main() -> None:
     regime_shift = RegimeShiftEvaluator(settings, redis_client, alert_engine)
     correlation_break = CorrelationBreakEvaluator(settings, redis_client, alert_engine)
     deribit = DeribitCollector(settings, pool, redis_client)
+    coingecko = CoinGeckoCollector(settings, pool, redis_client)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -131,6 +133,7 @@ async def main() -> None:
         regime_shift.request_shutdown()
         correlation_break.request_shutdown()
         deribit.request_shutdown()
+        coingecko.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -150,6 +153,7 @@ async def main() -> None:
         regime_shift.run(),
         correlation_break.run(),
         deribit.run(),
+        coingecko.run(),
     )
 
     await nc.close()
