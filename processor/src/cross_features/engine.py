@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import time
 from datetime import datetime, timezone
@@ -10,8 +11,8 @@ import structlog
 
 from config import Settings
 from cross_features.cache import cache_cross_features
-from cross_features.db import fetch_symbol_closes, upsert_cross_features
-from cross_features.indicators import compute_all_cross_features
+from cross_features.db import fetch_dxy_5d_ago, fetch_symbol_closes, upsert_cross_features
+from cross_features.indicators import MacroStressParams, compute_all_cross_features, compute_macro_features
 from features.config import FeatureParams
 
 log = structlog.get_logger()
@@ -27,6 +28,8 @@ _ASSETS_INVOLVED: dict[str, list[str]] = {
     "hype_btc_rs": ["HYPEUSDT", "BTCUSDT"],
     "hype_btc_rs_zscore": ["HYPEUSDT", "BTCUSDT"],
     "macro_stress": [],
+    "vix": [],
+    "dxy_momentum": [],
 }
 
 
@@ -37,11 +40,7 @@ class CrossFeatureEngine:
     Features computed each cycle:
     - eth_btc_rs, sol_btc_rs, hype_btc_rs  (RS alpha vs BTC)
     - eth_btc_rs_zscore, sol_btc_rs_zscore, hype_btc_rs_zscore
-    - macro_stress = 0.0 (stub until FE-3 integrates FRED/Yahoo data)
-
-    Correlation features (corr_btc_sp500, corr_btc_dxy, corr_btc_sp500_7d)
-    are absent until macro data is available (FE-3). Their absence means
-    no rows are written — consumers treat missing rows as NULL.
+    - macro_stress, vix, dxy_momentum  (FE-3 macro overlay via Yahoo Finance)
 
     Runs concurrently alongside Normalizer and FeatureEngine in main.py.
     One failing cycle never crashes the service (rule 1.3).
@@ -52,6 +51,7 @@ class CrossFeatureEngine:
         self._pool = pool
         self._redis = redis
         self._params = FeatureParams.load(settings.thresholds_path)
+        self._macro_params = MacroStressParams.load(settings.thresholds_path)
         self._shutdown = asyncio.Event()
         # Total candles needed: rs_zscore_window + rs_lookback
         self._n_candles = self._params.rs_zscore_window + self._params.rs_lookback
@@ -82,6 +82,17 @@ class CrossFeatureEngine:
 
         log.info("cross_feature_engine.stopped")
 
+    async def _fetch_macro_inputs(self) -> tuple[float | None, float | None, float | None]:
+        """Read VIX and DXY current from Redis; fetch DXY 5-day-ago from DB."""
+        vix_raw, dxy_raw = await asyncio.gather(
+            self._redis.get("macro:latest:vix"),
+            self._redis.get("macro:latest:dxy"),
+        )
+        vix = json.loads(vix_raw)["value"] if vix_raw else None
+        dxy_current = json.loads(dxy_raw)["value"] if dxy_raw else None
+        dxy_5d_ago = await fetch_dxy_5d_ago(self._pool)
+        return vix, dxy_current, dxy_5d_ago
+
     async def _compute_cycle(self, cycle_time: datetime) -> None:
         """Fetch closes, compute features, upsert to DB, cache in Redis."""
         closes = await fetch_symbol_closes(self._pool, self._n_candles)
@@ -90,6 +101,11 @@ class CrossFeatureEngine:
             return
 
         features = compute_all_cross_features(closes, self._params)
+
+        # Macro overlay: replaces stub macro_stress=0.0 with real VIX+DXY composite
+        vix, dxy_current, dxy_5d_ago = await self._fetch_macro_inputs()
+        macro = compute_macro_features(vix, dxy_current, dxy_5d_ago, self._macro_params)
+        features.update(macro)
 
         # NaN values are not inserted — value column is NOT NULL
         rows = [

@@ -51,6 +51,30 @@ async def fetch_symbol_closes(pool: AsyncConnectionPool, n_candles: int) -> pd.D
     return df.pivot(index="time", columns="symbol", values="close")
 
 
+async def fetch_dxy_5d_ago(pool: AsyncConnectionPool) -> float | None:
+    """
+    Return the oldest DXY value from the last 10 days (≈ 5 trading days ago).
+
+    Querying the oldest value within the last 10 days (excluding today) gives
+    approximately 5 trading days of lookback, accounting for weekends and
+    US market holidays when Yahoo Finance does not update.
+
+    Returns None if no DXY rows exist in the window (data not yet populated).
+    """
+    query = """
+        SELECT value FROM macro_data
+        WHERE indicator = 'DXY'
+          AND time >= NOW() - INTERVAL '10 days'
+          AND time < NOW() - INTERVAL '1 day'
+        ORDER BY time ASC
+        LIMIT 1
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(query)
+        row = await cur.fetchone()
+    return float(row[0]) if row else None
+
+
 async def upsert_cross_features(pool: AsyncConnectionPool, rows: Sequence[tuple]) -> int:
     """
     Batch-insert cross-feature rows using a single multi-row INSERT.
