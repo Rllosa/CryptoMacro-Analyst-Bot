@@ -69,7 +69,13 @@ class CryptoppanicCollector:
         Uses time.monotonic() for drift-free timing.
         On startup: immediately runs a cycle to capture posts from the last
         max_age_minutes window — no separate backfill needed.
+
+        No-ops silently when CRYPTOPANIC_API_KEY is unset (free tier quota too low).
         """
+        if not self._settings.cryptopanic_api_key:
+            log.info("cryptopanic_collector.disabled", reason="no_api_key")
+            return
+
         log.info(
             "cryptopanic_collector.starting",
             interval_secs=self._settings.cryptopanic_poll_interval_secs,

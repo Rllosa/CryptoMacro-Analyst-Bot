@@ -16,6 +16,7 @@ import asyncio
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 import nats as nats_client
 import redis.asyncio as aioredis
@@ -45,6 +46,8 @@ from cross_features.engine import CrossFeatureEngine  # noqa: E402
 from db import create_pool_with_retry  # noqa: E402
 from derivatives.engine import DerivativesEngine  # noqa: E402
 from features.engine import FeatureEngine  # noqa: E402
+from llm import publisher as brief_publisher  # noqa: E402
+from llm.scheduler import DailyBriefScheduler  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
 
 log = structlog.get_logger()
@@ -55,7 +58,6 @@ def _configure_logging() -> None:
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
@@ -90,6 +92,10 @@ async def main() -> None:
     await setup_stream(nc)
     log.info("processor.nats_stream_ready", stream="ALERTS")
 
+    # Create DAILY_BRIEF JetStream stream — idempotent
+    await brief_publisher.setup_stream(nc)
+    log.info("processor.nats_stream_ready", stream="DAILY_BRIEF")
+
     # Connect to Redis for feature caching
     redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)
     log.info("processor.redis_connected")
@@ -118,6 +124,13 @@ async def main() -> None:
     coingecko = CoinGeckoCollector(settings, pool, redis_client)
     cryptopanic_news = CryptoppanicCollector(settings, pool, redis_client)
     coinglass_heatmap = CoinglassHeatmapCollector(settings, pool, redis_client)
+    brief_scheduler = DailyBriefScheduler(settings, redis_client, pool, nc)
+
+    # On-demand brief trigger via Core NATS (bot publishes briefs.request)
+    async def _on_brief_request(msg: Any) -> None:
+        asyncio.create_task(brief_scheduler.trigger())
+
+    await nc.subscribe("briefs.request", cb=_on_brief_request)
 
     # Graceful shutdown on SIGTERM / SIGINT — propagate to all workers
     loop = asyncio.get_running_loop()
@@ -140,6 +153,7 @@ async def main() -> None:
         coingecko.request_shutdown()
         cryptopanic_news.request_shutdown()
         coinglass_heatmap.request_shutdown()
+        brief_scheduler.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -162,6 +176,7 @@ async def main() -> None:
         coingecko.run(),
         cryptopanic_news.run(),
         coinglass_heatmap.run(),
+        brief_scheduler.run(),
     )
 
     await nc.close()
