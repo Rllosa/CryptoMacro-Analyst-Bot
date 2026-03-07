@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     coinglass_heatmap_poll_interval_secs: int = Field(default=300, alias="COINGLASS_HEATMAP_POLL_INTERVAL_SECS")  # 5-minute heatmap polling
     coinglass_heatmap_top_n: int = Field(default=20, alias="COINGLASS_HEATMAP_TOP_N")  # top N clusters per direction (above/below)
 
+    # LLM / Claude (LLM-2)
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    claude_model_daily: str = Field(default="claude-sonnet-4-6", alias="CLAUDE_MODEL_DAILY")
+    claude_model_weekly: str = Field(default="claude-opus-4-6", alias="CLAUDE_MODEL_WEEKLY")
+    claude_model_event: str = Field(default="claude-sonnet-4-6", alias="CLAUDE_MODEL_EVENT")
+
     @property
     def db_dsn(self) -> str:
         """Build a libpq-style DSN string for psycopg/AsyncConnectionPool."""
