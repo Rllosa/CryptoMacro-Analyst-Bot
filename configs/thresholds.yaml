@@ -416,6 +416,25 @@ macro_stress:
       max: 5                          # DXY +5% 5-day change → contribution = 100 (USD surging, risk-off)
 
 # =============================================================================
+# NEWS CLASSIFIER (LLM-2b) — Async headline classification thresholds
+# =============================================================================
+news_classifier:
+  max_per_cycle: 10             # Max headlines classified per 5-minute cycle (cost control)
+  max_age_minutes: 30           # Skip headlines older than this — stale news has less alpha
+  redis_ttl_secs: 7200          # TTL for news_signals:latest Redis key (2h)
+  redis_max_signals: 20         # Max signals kept in news_signals:latest list
+
+# =============================================================================
+# NEWS_EVENT ALERT (AL-12) — Deterministic trigger rules on LLM-2b output
+# =============================================================================
+news_event:
+  min_confidence: "high"        # Only fire on high-confidence LLM classifications
+  max_age_minutes: 20           # Ignore signals older than this at alert-fire time
+  cooldown_secs: 3600           # 1h cooldown per (asset, event_type) pair
+  excluded_directions:          # Do not fire for these directions
+    - "neutral"
+
+# =============================================================================
 # PHASE 1-2 ONLY NOTE
 # =============================================================================
 # Additional thresholds for Phase 3-4 alerts will be added in F-5b:
