@@ -79,6 +79,7 @@ services:
     env_file: .env
     volumes:
       - ./configs:/app/configs:ro
+      - ./schema:/schema:ro
     depends_on:
       timescaledb:
         condition: service_healthy

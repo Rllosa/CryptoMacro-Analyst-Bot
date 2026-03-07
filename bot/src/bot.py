@@ -28,6 +28,7 @@ class CryptoMacroBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         from commands.alerts import setup as setup_alerts
+        from commands.brief import setup as setup_brief
         from commands.macro import setup as setup_macro
         from commands.regime import setup as setup_regime
         from commands.status import setup as setup_status
@@ -38,6 +39,7 @@ class CryptoMacroBot(commands.Bot):
         await setup_regime(self)
         await setup_macro(self)
         await setup_stubs(self)
+        await setup_brief(self)
 
     async def on_ready(self) -> None:
         guild = discord.Object(id=self.settings.discord_server_id)
@@ -94,6 +96,85 @@ class CryptoMacroBot(commands.Bot):
 
     def _build_embed(self, payload: dict) -> discord.Embed:
         return format_alert_embed(payload)
+
+    async def start_brief_listener(self) -> None:
+        try:
+            js = self.nc.jetstream()
+            sub = await js.subscribe(
+                "reports.daily_brief",
+                durable="discord-daily-brief-consumer",
+                stream="DAILY_BRIEF",
+            )
+            logger.info("NATS brief listener started (durable=discord-daily-brief-consumer)")
+            async for msg in sub.messages:
+                await self._on_brief(msg)
+        except Exception as e:
+            logger.warning(
+                "NATS brief listener DEGRADED: %s — bot stays online, slash commands work", e
+            )
+
+    async def _on_brief(self, msg) -> None:
+        try:
+            payload = json.loads(msg.data.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error("Invalid brief message encoding: %s", e)
+            await msg.ack()
+            return
+
+        try:
+            await msg.ack()
+            channel = self._get_channel("daily_brief")
+            if channel is None:
+                logger.warning("discord_channel_daily_brief not configured")
+                return
+            embed = self._build_brief_embed(payload)
+            await channel.send(embed=embed)
+        except Exception as e:
+            logger.error("Error posting daily brief: %s", e)
+
+    def _build_brief_embed(self, payload: dict) -> discord.Embed:
+        _REGIME_COLORS = {
+            "RISK_ON_TREND": 0x22C55E,    # green
+            "RISK_OFF_STRESS": 0xEF4444,  # red
+            "CHOP_RANGE": 0xA3A3A3,       # grey
+            "VOL_EXPANSION": 0xF97316,    # orange
+            "DELEVERAGING": 0xDC2626,     # dark red
+        }
+        regime_summary = payload.get("regime_summary") or {}
+        current_regime = regime_summary.get("current_regime", "CHOP_RANGE")
+        color = _REGIME_COLORS.get(current_regime, 0xA3A3A3)
+
+        generated_at = payload.get("generated_at", "")[:16].replace("T", " ")
+        title = f"Daily Brief — {generated_at} UTC"
+
+        embed = discord.Embed(
+            title=title,
+            description=(regime_summary.get("analysis") or "")[:4000],
+            color=color,
+        )
+
+        key_insights = payload.get("key_insights") or []
+        if key_insights:
+            embed.add_field(
+                name="Key Insights",
+                value="\n".join(f"• {i}" for i in key_insights),
+                inline=False,
+            )
+
+        watch_list = payload.get("watch_list") or []
+        if watch_list:
+            embed.add_field(
+                name="Watch List",
+                value="\n".join(f"• {w}" for w in watch_list),
+                inline=False,
+            )
+
+        llm_meta = payload.get("llm_metadata") or {}
+        embed.set_footer(
+            text=f"{llm_meta.get('model', 'claude')} · {llm_meta.get('tokens_used', 0):,} tokens"
+        )
+
+        return embed
 
     def request_shutdown(self) -> None:
         self._shutdown_event.set()

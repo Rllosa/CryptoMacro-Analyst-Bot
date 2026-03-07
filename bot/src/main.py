@@ -48,8 +48,9 @@ async def main() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, bot.request_shutdown)
 
-    # Start NATS listener concurrently before bot.start() blocks
+    # Start NATS listeners concurrently before bot.start() blocks
     nats_task = asyncio.create_task(bot.start_nats_listener())
+    brief_task = asyncio.create_task(bot.start_brief_listener())
 
     try:
         await bot.start(settings.discord_bot_token)
@@ -57,10 +58,12 @@ async def main() -> None:
         logger.error("Discord login failed (check DISCORD_BOT_TOKEN): %s", e)
     finally:
         nats_task.cancel()
-        try:
-            await nats_task
-        except asyncio.CancelledError:
-            pass
+        brief_task.cancel()
+        for task in (nats_task, brief_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await nc.drain()
         await redis.aclose()
         await pool.close()

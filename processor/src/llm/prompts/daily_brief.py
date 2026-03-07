@@ -1,8 +1,11 @@
 """
-Daily Brief prompt template (LLM-2 / SOLO-56).
+Daily Brief prompt template (LLM-2 / SOLO-56, updated LLM-3 / SOLO-57).
 
 Builds the system + user prompt for the twice-daily Claude market brief
 (09:00 and 19:00 Dubai time).
+
+Claude is asked to output structured JSON only. The scheduler (LLM-3) wraps
+Claude's output in the full F-7 envelope and validates against the schema.
 
 Consumed by LLM-3 (daily brief scheduler).
 """
@@ -13,9 +16,10 @@ SYSTEM = """\
 You are a professional crypto macro analyst. Your audience is a sophisticated
 trader who already understands market mechanics — do not over-explain basics.
 
-Output format: concise markdown with clear section headers.
-Tone: direct, signal-focused, no fluff. Use numbers where available.
-Max length: ~600 words. Never make promises about future prices.
+Tone: direct, signal-focused, no fluff. Use specific numbers where available.
+Never make promises about future prices.
+
+IMPORTANT: Respond ONLY with valid JSON — no markdown fences, no preamble, no trailing text.
 """.strip()
 
 
@@ -113,10 +117,18 @@ def build(context: dict) -> str:
         lines.append("")
 
     lines.append(
-        "Based on the above, write the daily brief with these sections: "
-        "**Market Regime**, **Key Asset Signals**, **Macro Backdrop**, "
-        "**Derivative Positioning** (if data available), **Notable Alerts**, "
-        "**Positioning Bias** (BULLISH / BEARISH / NEUTRAL / VOLATILE with one-line rationale)."
+        'Based on the above data, respond with a JSON object containing EXACTLY these keys:\n'
+        '{\n'
+        '  "regime_analysis": "2-4 sentences analysing the current regime, what drove it, '
+        'and what it means for positioning. Include specific numbers.",\n'
+        '  "key_insights": ["insight 1", "insight 2", "insight 3"],\n'
+        '  "watch_list": ["watchpoint 1", "watchpoint 2", "watchpoint 3"]\n'
+        '}\n\n'
+        'Rules:\n'
+        '- regime_analysis: 2-4 sentences, specific numbers, no generic statements.\n'
+        '- key_insights: 1-5 strings, each a crisp actionable insight with numbers.\n'
+        '- watch_list: 1-5 strings, each a concrete level, event, or condition to monitor.\n'
+        '- Output ONLY the JSON object. No markdown. No explanation outside the JSON.'
     )
 
     return "\n".join(lines)

@@ -141,3 +141,61 @@ class ClaudeClient:
 
         # Unreachable — loop always raises or returns, but satisfies type checker.
         raise RuntimeError("complete() exited retry loop without returning")  # pragma: no cover
+
+    async def complete_with_usage(
+        self,
+        prompt: str,
+        *,
+        model: str = MODEL_DAILY,
+        max_tokens: int = 2048,
+        system: str | None = None,
+    ) -> tuple[str, int, int]:
+        """
+        Like complete() but also returns token counts: (text, input_tokens, output_tokens).
+
+        Same retry/backoff logic. Use this when cost tracking is required (e.g. daily briefs).
+        """
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await asyncio.wait_for(
+                    self._client.messages.create(**kwargs),
+                    timeout=self._timeout,
+                )
+                text: str = response.content[0].text  # type: ignore[union-attr]
+                return text, response.usage.input_tokens, response.usage.output_tokens
+
+            except anthropic.RateLimitError as exc:
+                if attempt >= self._max_retries:
+                    log.warning("claude_client.rate_limit_exhausted", model=model, attempts=attempt + 1)
+                    raise
+                log.warning("claude_client.rate_limit_retry", model=model, attempt=attempt + 1,
+                            backoff_secs=2**attempt, error=str(exc))
+                await asyncio.sleep(2**attempt)
+
+            except anthropic.APIStatusError as exc:
+                if exc.status_code not in _RETRYABLE_STATUS or attempt >= self._max_retries:
+                    log.warning("claude_client.api_error", model=model, status_code=exc.status_code,
+                                attempts=attempt + 1, error=str(exc))
+                    raise
+                log.warning("claude_client.api_error_retry", model=model, status_code=exc.status_code,
+                            attempt=attempt + 1, backoff_secs=2**attempt, error=str(exc))
+                await asyncio.sleep(2**attempt)
+
+            except asyncio.TimeoutError:
+                if attempt >= self._max_retries:
+                    log.warning("claude_client.timeout_exhausted", model=model,
+                                timeout_secs=self._timeout, attempts=attempt + 1)
+                    raise
+                log.warning("claude_client.timeout_retry", model=model, timeout_secs=self._timeout,
+                            attempt=attempt + 1, backoff_secs=2**attempt)
+                await asyncio.sleep(2**attempt)
+
+        raise RuntimeError("complete_with_usage() exited retry loop without returning")  # pragma: no cover
