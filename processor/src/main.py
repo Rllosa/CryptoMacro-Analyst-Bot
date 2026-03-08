@@ -26,6 +26,7 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
+from alerts.news_event import NewsEventEvaluator  # noqa: E402
 from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
 from coingecko.collector import CoinGeckoCollector  # noqa: E402
 from coinglass.heatmap_collector import CoinglassHeatmapCollector  # noqa: E402
@@ -127,6 +128,7 @@ async def main() -> None:
     coinglass_heatmap = CoinglassHeatmapCollector(settings, pool, redis_client)
     brief_scheduler = DailyBriefScheduler(settings, redis_client, pool, nc)
     news_classifier = NewsClassifier(settings, pool, redis_client)
+    news_event = NewsEventEvaluator(settings, redis_client, alert_engine)
 
     # On-demand brief trigger via Core NATS (bot publishes briefs.request)
     async def _on_brief_request(msg: Any) -> None:
@@ -157,6 +159,7 @@ async def main() -> None:
         coinglass_heatmap.request_shutdown()
         brief_scheduler.request_shutdown()
         news_classifier.request_shutdown()
+        news_event.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -181,6 +184,7 @@ async def main() -> None:
         coinglass_heatmap.run(),
         brief_scheduler.run(),
         news_classifier.run(),
+        news_event.run(),
     )
 
     await nc.close()
