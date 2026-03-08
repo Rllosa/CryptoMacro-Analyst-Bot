@@ -322,6 +322,7 @@ cooldowns:
     BREAKOUT: 60
     REGIME_SHIFT: 90
     CORRELATION_BREAK: 120
+    NEWS_EVENT: 60
 
 # =============================================================================
 # PERSISTENCE SETTINGS
@@ -339,6 +340,7 @@ persistence:
     BREAKOUT: 2                       # 2 cycles = 10 minutes
     REGIME_SHIFT: 1                   # No persistence (regime is cycle output)
     CORRELATION_BREAK: 2              # 2 cycles = 10 minutes
+    NEWS_EVENT: 1                     # No persistence (news events are time-sensitive)
 
 # =============================================================================
 # ALERT FREQUENCY TARGETS
