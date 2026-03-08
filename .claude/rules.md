@@ -604,7 +604,12 @@ NOTE: DI-3 (FRED full series) deferred to Phase 5+. VIX + DXY via Yahoo Finance 
 NOTE: LLM-2b is async background service — never in 5m hot path. Rule 1.1 preserved.
 ```
 
-**Gate:** All 5 regimes active (incl. RISK_OFF_STRESS). INDETERMINATE alert fires. Deribit DVOL flowing. Daily briefs posting.
+**Gate:** All 5 regimes active (incl. RISK_OFF_STRESS). INDETERMINATE alert fires. Deribit DVOL flowing. Daily briefs posting. NEWS_EVENT alert fires deterministically from LLM-2b classifier output. Daily brief envelope includes `positioning_bias` field with valid BULLISH/BEARISH/NEUTRAL/VOLATILE direction. `make smoke` still passes.
+
+**Remaining to close Phase 2 (as of 2026-03-07):**
+- [ ] SOLO-95: LLM-2b — Async News Classifier (Cryptopanic posts → structured JSON signal)
+- [ ] SOLO-96: AL-12 — NEWS_EVENT Alert Evaluator (deterministic rules on classifier output)
+- [ ] SOLO-97: LLM-3b — Positioning Bias section in daily brief
 
 ---
 

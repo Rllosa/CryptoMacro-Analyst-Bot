@@ -47,6 +47,7 @@ from db import create_pool_with_retry  # noqa: E402
 from derivatives.engine import DerivativesEngine  # noqa: E402
 from features.engine import FeatureEngine  # noqa: E402
 from llm import publisher as brief_publisher  # noqa: E402
+from llm.news_classifier import NewsClassifier  # noqa: E402
 from llm.scheduler import DailyBriefScheduler  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
 
@@ -125,6 +126,7 @@ async def main() -> None:
     cryptopanic_news = CryptoppanicCollector(settings, pool, redis_client)
     coinglass_heatmap = CoinglassHeatmapCollector(settings, pool, redis_client)
     brief_scheduler = DailyBriefScheduler(settings, redis_client, pool, nc)
+    news_classifier = NewsClassifier(settings, pool, redis_client)
 
     # On-demand brief trigger via Core NATS (bot publishes briefs.request)
     async def _on_brief_request(msg: Any) -> None:
@@ -154,6 +156,7 @@ async def main() -> None:
         cryptopanic_news.request_shutdown()
         coinglass_heatmap.request_shutdown()
         brief_scheduler.request_shutdown()
+        news_classifier.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -177,6 +180,7 @@ async def main() -> None:
         cryptopanic_news.run(),
         coinglass_heatmap.run(),
         brief_scheduler.run(),
+        news_classifier.run(),
     )
 
     await nc.close()

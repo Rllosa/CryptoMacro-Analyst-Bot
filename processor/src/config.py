@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     claude_model_daily: str = Field(default="claude-sonnet-4-6", alias="CLAUDE_MODEL_DAILY")
     claude_model_weekly: str = Field(default="claude-opus-4-6", alias="CLAUDE_MODEL_WEEKLY")
     claude_model_event: str = Field(default="claude-sonnet-4-6", alias="CLAUDE_MODEL_EVENT")
+    claude_model_news: str = Field(default="claude-haiku-4-5-20251001", alias="CLAUDE_MODEL_NEWS")  # cheapest for news classification
+
+    # News Classifier (LLM-2b)
+    news_classifier_interval_secs: int = Field(default=300, alias="NEWS_CLASSIFIER_INTERVAL_SECS")
 
     @property
     def db_dsn(self) -> str:
