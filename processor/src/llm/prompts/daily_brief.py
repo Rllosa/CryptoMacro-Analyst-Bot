@@ -23,7 +23,7 @@ IMPORTANT: Respond ONLY with valid JSON — no markdown fences, no preamble, no 
 """.strip()
 
 
-def build(context: dict) -> str:
+def build(context: dict, direction_label: str = "") -> str:
     """Return the user message string for the daily brief."""
     lines: list[str] = ["Produce a concise crypto macro daily brief based on the following data.\n"]
 
@@ -116,19 +116,48 @@ def build(context: dict) -> str:
         lines.append(f"_Data unavailable: {', '.join(missing)}. Brief is partial._")
         lines.append("")
 
+    # --- Positioning bias context (direction label set deterministically — do not override) ---
+    if direction_label:
+        lines.append("**Positioning Bias Direction (PRE-SET — do NOT rephrase or override):**")
+        lines.append(f"  Direction: {direction_label}")
+        # Pass funding_zscore and RS ratios as context for the LLM text fields
+        derivatives = context.get("derivatives") or {}
+        btc_deriv = derivatives.get("BTC") or {}
+        funding_z = btc_deriv.get("funding_zscore")
+        cross = context.get("cross_features") or {}
+        eth_btc = cross.get("eth_btc_rs")
+        sol_btc = cross.get("sol_btc_rs")
+        if funding_z is not None:
+            lines.append(f"  BTC funding z-score: {funding_z:+.2f}")
+        if eth_btc is not None:
+            lines.append(f"  ETH/BTC RS: {eth_btc:+.2f}")
+        if sol_btc is not None:
+            lines.append(f"  SOL/BTC RS: {sol_btc:+.2f}")
+        lines.append("")
+
     lines.append(
         'Based on the above data, respond with a JSON object containing EXACTLY these keys:\n'
         '{\n'
         '  "regime_analysis": "2-4 sentences analysing the current regime, what drove it, '
         'and what it means for positioning. Include specific numbers.",\n'
         '  "key_insights": ["insight 1", "insight 2", "insight 3"],\n'
-        '  "watch_list": ["watchpoint 1", "watchpoint 2", "watchpoint 3"]\n'
+        '  "watch_list": ["watchpoint 1", "watchpoint 2", "watchpoint 3"],\n'
+        '  "positioning_bias_text": {\n'
+        '    "leverage_risk": "ONE of: LOW | MODERATE | ELEVATED | HIGH — with brief reason",\n'
+        '    "alt_exposure": "ONE of: AVOID | SELECTIVE | MODERATE | FULL — with brief reason",\n'
+        '    "key_risk": "One sentence: what could invalidate the current positioning bias?",\n'
+        '    "conditions_favor": "1-2 sentences: actionable positioning recommendation"\n'
+        '  }\n'
         '}\n\n'
         'Rules:\n'
         '- regime_analysis: 2-4 sentences, specific numbers, no generic statements.\n'
         '- key_insights: 1-5 strings, each a crisp actionable insight with numbers.\n'
         '- watch_list: 1-5 strings, each a concrete level, event, or condition to monitor.\n'
-        '- Output ONLY the JSON object. No markdown. No explanation outside the JSON.'
+        '- positioning_bias_text.leverage_risk: start with one of LOW/MODERATE/ELEVATED/HIGH.\n'
+        '- positioning_bias_text.alt_exposure: start with one of AVOID/SELECTIVE/MODERATE/FULL.\n'
+        + (f'- The direction "{direction_label}" is FIXED — do not rephrase or contradict it.\n'
+           if direction_label else "")
+        + '- Output ONLY the JSON object. No markdown. No explanation outside the JSON.'
     )
 
     return "\n".join(lines)
