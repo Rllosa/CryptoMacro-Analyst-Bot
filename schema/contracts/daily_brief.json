@@ -165,6 +165,31 @@
       },
       "maxItems": 5
     },
+    "positioning_bias": {
+      "type": "object",
+      "description": "Deterministic positioning bias direction + LLM explanation text",
+      "required": ["direction", "regime", "confidence"],
+      "properties": {
+        "direction": {
+          "type": "string",
+          "description": "Direction label computed deterministically from regime + confidence + btc_trend"
+        },
+        "regime": {
+          "type": "string",
+          "description": "Regime at time of generation"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "leverage_risk": {"type": "string"},
+        "alt_exposure": {"type": "string"},
+        "key_risk": {"type": "string"},
+        "conditions_favor": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
     "llm_metadata": {
       "type": "object",
       "description": "LLM generation metadata",

@@ -427,6 +427,16 @@ news_classifier:
   redis_max_signals: 20         # Max signals kept in news_signals:latest list
 
 # =============================================================================
+# POSITIONING BIAS (LLM-3b) — Confidence qualifier thresholds
+# Direction label is set deterministically before LLM call (Rule 1.1).
+# =============================================================================
+positioning_bias:
+  confidence_high: 0.80           # >= this → "Strongly" qualifier
+  confidence_medium: 0.60         # >= this (< high) → stated plainly, no qualifier
+  # < confidence_medium → "Cautiously … — thin signal"
+  vol_expansion_trend_threshold: 0.005  # |btc_trend| > this to derive VOL_EXPANSION direction
+
+# =============================================================================
 # NEWS_EVENT ALERT (AL-12) — Deterministic trigger rules on LLM-2b output
 # =============================================================================
 news_event:

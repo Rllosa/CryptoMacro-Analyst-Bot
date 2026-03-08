@@ -28,6 +28,7 @@ from uuid import uuid4
 
 import jsonschema
 import structlog
+import yaml
 
 from llm.client import ClaudeClient
 from llm.context import ContextBuilder
@@ -59,6 +60,69 @@ _VOL_HIGH_THRESH = 1.5
 _VALID_REGIMES = frozenset(
     {"RISK_ON_TREND", "RISK_OFF_STRESS", "CHOP_RANGE", "VOL_EXPANSION", "DELEVERAGING"}
 )
+
+# ---------------------------------------------------------------------------
+# Positioning bias — deterministic direction label (LLM-3b / SOLO-97)
+# ---------------------------------------------------------------------------
+
+# Base direction per regime (VOL_EXPANSION is btc_trend-derived, handled separately)
+_REGIME_DIRECTION_MAP: dict[str, str] = {
+    "RISK_ON_TREND": "BULLISH",
+    "RISK_OFF_STRESS": "BEARISH",
+    "DELEVERAGING": "BEARISH",
+    "CHOP_RANGE": "NEUTRAL",
+}
+
+# Default confidence qualifier thresholds (overridden by thresholds.yaml at generation time)
+_DEFAULT_CONF_HIGH = 0.80
+_DEFAULT_CONF_MEDIUM = 0.60
+_DEFAULT_VOL_TREND_THRESH = 0.005
+
+
+def _load_positioning_params(thresholds_path: str) -> tuple[float, float, float]:
+    """Load confidence qualifier thresholds from thresholds.yaml. Falls back to defaults."""
+    try:
+        with open(thresholds_path) as fh:
+            cfg = (yaml.safe_load(fh) or {}).get("positioning_bias", {})
+        return (
+            float(cfg.get("confidence_high", _DEFAULT_CONF_HIGH)),
+            float(cfg.get("confidence_medium", _DEFAULT_CONF_MEDIUM)),
+            float(cfg.get("vol_expansion_trend_threshold", _DEFAULT_VOL_TREND_THRESH)),
+        )
+    except Exception:
+        return _DEFAULT_CONF_HIGH, _DEFAULT_CONF_MEDIUM, _DEFAULT_VOL_TREND_THRESH
+
+
+def _compute_direction_label(
+    regime: str | None,
+    confidence: float,
+    btc_trend: float,
+    conf_high: float,
+    conf_medium: float,
+    vol_trend_thresh: float,
+) -> str:
+    """
+    Return the deterministic positioning bias direction label.
+
+    This label is set before Claude is called — Claude cannot override it.
+    Confidence qualifier thresholds come from thresholds.yaml (Rule 1.1).
+    """
+    if not regime or regime not in {*_REGIME_DIRECTION_MAP, "VOL_EXPANSION"}:
+        return "UNCLEAR — transitioning"
+
+    if regime == "VOL_EXPANSION":
+        if btc_trend > vol_trend_thresh:
+            return "VOLATILE — bullish expansion"
+        if btc_trend < -vol_trend_thresh:
+            return "VOLATILE — bearish expansion"
+        return "VOLATILE — direction unclear"
+
+    base = _REGIME_DIRECTION_MAP[regime]
+    if confidence >= conf_high:
+        return f"Strongly {base}"
+    if confidence >= conf_medium:
+        return base
+    return f"Cautiously {base} — thin signal"
 
 
 def _vol_label(rv_z: float) -> str:
@@ -129,8 +193,23 @@ class DailyBriefScheduler:
             # 1. Assemble context
             context = await ContextBuilder(self._redis, self._pool).build()
 
-            # 2. Build prompt and call Claude
-            prompt = daily_brief_prompt.build(context)
+            # 2. Compute deterministic positioning bias direction label (before Claude call)
+            conf_high, conf_medium, vol_thresh = _load_positioning_params(
+                self._settings.thresholds_path
+            )
+            regime_ctx = context.get("regime") or {}
+            btc_features = (context.get("features") or {}).get("BTC") or {}
+            direction_label = _compute_direction_label(
+                regime=regime_ctx.get("current"),
+                confidence=float(regime_ctx.get("confidence") or 0.0),
+                btc_trend=float(btc_features.get("r_1h") or 0.0),
+                conf_high=conf_high,
+                conf_medium=conf_medium,
+                vol_trend_thresh=vol_thresh,
+            )
+
+            # 3. Build prompt and call Claude
+            prompt = daily_brief_prompt.build(context, direction_label=direction_label)
             client = ClaudeClient(api_key=self._settings.anthropic_api_key,
                                   model=self._settings.claude_model_daily)
             text, in_tok, out_tok = await client.complete_with_usage(
@@ -140,19 +219,22 @@ class DailyBriefScheduler:
                 max_tokens=1024,
             )
 
-            # 3. Parse Claude's JSON response
+            # 4. Parse Claude's JSON response
             claude_json = json.loads(text)
             regime_analysis: str = claude_json.get("regime_analysis", "")
             key_insights: list[str] = claude_json.get("key_insights", [])
             watch_list: list[str] = claude_json.get("watch_list", [])
+            positioning_bias_text: dict = claude_json.get("positioning_bias_text") or {}
 
-            # 4. Build F-7 envelope
+            # 5. Build F-7 envelope
             now = datetime.now(tz=timezone.utc)
             envelope = self._build_envelope(
                 context=context,
                 regime_analysis=regime_analysis,
                 key_insights=key_insights,
                 watch_list=watch_list,
+                direction_label=direction_label,
+                positioning_bias_text=positioning_bias_text,
                 model=self._settings.claude_model_daily,
                 in_tok=in_tok,
                 out_tok=out_tok,
@@ -160,13 +242,13 @@ class DailyBriefScheduler:
                 now=now,
             )
 
-            # 5. Validate against F-7 schema
+            # 6. Validate against F-7 schema
             self._validate(envelope)
 
-            # 6. Persist to analysis_reports
+            # 7. Persist to analysis_reports
             await self._write_db(envelope, context)
 
-            # 7. Publish to NATS → bot posts to Discord
+            # 8. Publish to NATS → bot posts to Discord
             await publisher.publish_report(self._nc, envelope)
 
             elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -191,6 +273,8 @@ class DailyBriefScheduler:
         regime_analysis: str,
         key_insights: list[str],
         watch_list: list[str],
+        direction_label: str,
+        positioning_bias_text: dict[str, Any],
         model: str,
         in_tok: int,
         out_tok: int,
@@ -272,6 +356,15 @@ class DailyBriefScheduler:
             },
             "key_insights": key_insights[:5],
             "watch_list": watch_list[:5],
+            "positioning_bias": {
+                "direction": direction_label,
+                "regime": current_regime,
+                "confidence": float(regime.get("confidence") or 0.0),
+                "leverage_risk": str(positioning_bias_text.get("leverage_risk") or ""),
+                "alt_exposure": str(positioning_bias_text.get("alt_exposure") or ""),
+                "key_risk": str(positioning_bias_text.get("key_risk") or ""),
+                "conditions_favor": str(positioning_bias_text.get("conditions_favor") or ""),
+            },
             "llm_metadata": {
                 "model": model,
                 "tokens_used": in_tok + out_tok,
