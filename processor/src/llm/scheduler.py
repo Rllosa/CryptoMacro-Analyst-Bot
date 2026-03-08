@@ -350,8 +350,10 @@ class DailyBriefScheduler:
             "market_summary": {
                 "assets": assets,
                 "correlations": {
-                    "btc_spx": None,
-                    "btc_dxy": cross.get("dxy_momentum"),
+                    k: v for k, v in {
+                        "btc_spx": None,
+                        "btc_dxy": cross.get("dxy_momentum"),
+                    }.items() if v is not None
                 },
             },
             "key_insights": key_insights[:5],
