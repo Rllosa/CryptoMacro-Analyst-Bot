@@ -323,6 +323,7 @@ cooldowns:
     REGIME_SHIFT: 90
     CORRELATION_BREAK: 120
     NEWS_EVENT: 60
+    DELEVERAGING_EVENT: 30
 
 # =============================================================================
 # PERSISTENCE SETTINGS
@@ -341,6 +342,7 @@ persistence:
     REGIME_SHIFT: 1                   # No persistence (regime is cycle output)
     CORRELATION_BREAK: 2              # 2 cycles = 10 minutes
     NEWS_EVENT: 1                     # No persistence (news events are time-sensitive)
+    DELEVERAGING_EVENT: 1             # No persistence (cascade events are time-sensitive)
 
 # =============================================================================
 # ALERT FREQUENCY TARGETS
@@ -425,6 +427,21 @@ news_classifier:
   max_age_minutes: 30           # Skip headlines older than this — stale news has less alpha
   redis_ttl_secs: 7200          # TTL for news_signals:latest Redis key (2h)
   redis_max_signals: 20         # Max signals kept in news_signals:latest list
+
+# =============================================================================
+# DELEVERAGING_EVENT ALERT (AL-8) — Cascade liquidation detection
+# =============================================================================
+deleveraging_event:
+  liq_1h_usd_threshold: 50000000   # $50M in 1h liquidations — cascade threshold
+  oi_drop_threshold: 1.0            # oi_drop_1h binary flag (1.0 = OI fell >= 5%)
+  atr_ratio_threshold: 2.0          # candle size >= 2x ATR — large directional move
+  severity: "HIGH"                  # Always HIGH — cascade events are always high-impact
+
+# =============================================================================
+# EVENT ANALYSIS (LLM-4) — Immediate Claude analysis on high-severity alerts
+# =============================================================================
+event_analysis:
+  max_tokens: 512                   # Claude token budget per event analysis
 
 # =============================================================================
 # POSITIONING BIAS (LLM-3b) — Confidence qualifier thresholds

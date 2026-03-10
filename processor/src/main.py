@@ -26,6 +26,7 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
+from alerts.deleveraging_event import DeleveragingEvaluator  # noqa: E402
 from alerts.news_event import NewsEventEvaluator  # noqa: E402
 from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
 from coingecko.collector import CoinGeckoCollector  # noqa: E402
@@ -48,6 +49,7 @@ from db import create_pool_with_retry  # noqa: E402
 from derivatives.engine import DerivativesEngine  # noqa: E402
 from features.engine import FeatureEngine  # noqa: E402
 from llm import publisher as brief_publisher  # noqa: E402
+from llm.event_analyzer import EventAnalyzer, setup_stream as event_stream_setup  # noqa: E402
 from llm.news_classifier import NewsClassifier  # noqa: E402
 from llm.scheduler import DailyBriefScheduler  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
@@ -98,6 +100,10 @@ async def main() -> None:
     await brief_publisher.setup_stream(nc)
     log.info("processor.nats_stream_ready", stream="DAILY_BRIEF")
 
+    # Create EVENT_ANALYSIS JetStream stream — idempotent
+    await event_stream_setup(nc)
+    log.info("processor.nats_stream_ready", stream="EVENT_ANALYSIS")
+
     # Connect to Redis for feature caching
     redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)
     log.info("processor.redis_connected")
@@ -129,6 +135,8 @@ async def main() -> None:
     brief_scheduler = DailyBriefScheduler(settings, redis_client, pool, nc)
     news_classifier = NewsClassifier(settings, pool, redis_client)
     news_event = NewsEventEvaluator(settings, redis_client, alert_engine)
+    event_analyzer = EventAnalyzer(settings, redis_client, pool, nc)
+    deleveraging_event = DeleveragingEvaluator(settings, redis_client, alert_engine, event_analyzer)
 
     # On-demand brief trigger via Core NATS (bot publishes briefs.request)
     async def _on_brief_request(msg: Any) -> None:
@@ -160,6 +168,7 @@ async def main() -> None:
         brief_scheduler.request_shutdown()
         news_classifier.request_shutdown()
         news_event.request_shutdown()
+        deleveraging_event.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -185,6 +194,7 @@ async def main() -> None:
         brief_scheduler.run(),
         news_classifier.run(),
         news_event.run(),
+        deleveraging_event.run(),
     )
 
     await nc.close()
