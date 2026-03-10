@@ -26,6 +26,7 @@ import structlog
 sys.path.insert(0, str(Path(__file__).parent))
 
 from alerts.breakout import BreakoutEvaluator  # noqa: E402
+from alerts.crowded_leverage import CrowdedLeverageEvaluator  # noqa: E402
 from alerts.deleveraging_event import DeleveragingEvaluator  # noqa: E402
 from alerts.news_event import NewsEventEvaluator  # noqa: E402
 from alerts.correlation_break import CorrelationBreakEvaluator  # noqa: E402
@@ -136,6 +137,7 @@ async def main() -> None:
     news_classifier = NewsClassifier(settings, pool, redis_client)
     news_event = NewsEventEvaluator(settings, redis_client, alert_engine)
     event_analyzer = EventAnalyzer(settings, redis_client, pool, nc)
+    crowded_leverage = CrowdedLeverageEvaluator(settings, redis_client, alert_engine)
     deleveraging_event = DeleveragingEvaluator(settings, redis_client, alert_engine, event_analyzer)
 
     # On-demand brief trigger via Core NATS (bot publishes briefs.request)
@@ -168,6 +170,7 @@ async def main() -> None:
         brief_scheduler.request_shutdown()
         news_classifier.request_shutdown()
         news_event.request_shutdown()
+        crowded_leverage.request_shutdown()
         deleveraging_event.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -194,6 +197,7 @@ async def main() -> None:
         brief_scheduler.run(),
         news_classifier.run(),
         news_event.run(),
+        crowded_leverage.run(),
         deleveraging_event.run(),
     )
 
