@@ -54,6 +54,7 @@ from llm.event_analyzer import EventAnalyzer, setup_stream as event_stream_setup
 from llm.news_classifier import NewsClassifier  # noqa: E402
 from llm.scheduler import DailyBriefScheduler  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
+from ops.degrade import DegradePublisher, setup_stream as ops_stream_setup  # noqa: E402
 
 log = structlog.get_logger()
 
@@ -105,6 +106,10 @@ async def main() -> None:
     await event_stream_setup(nc)
     log.info("processor.nats_stream_ready", stream="EVENT_ANALYSIS")
 
+    # Create OPS_HEALTH JetStream stream — idempotent
+    await ops_stream_setup(nc)
+    log.info("processor.nats_stream_ready", stream="OPS_HEALTH")
+
     # Connect to Redis for feature caching
     redis_client = await aioredis.from_url(settings.redis_url, decode_responses=True)
     log.info("processor.redis_connected")
@@ -120,9 +125,10 @@ async def main() -> None:
     cross_engine = CrossFeatureEngine(settings, pool, redis_client)
     # AlertEngine has no run loop — AL-2+ evaluators call evaluate_and_fire() each cycle
     alert_engine = AlertEngine(pool, redis_client, nc, AlertParams.load(settings.thresholds_path))
-    coinglass = CoinglassCollector(settings, pool)
+    degrade_publisher = DegradePublisher(nc)
+    coinglass = CoinglassCollector(settings, pool, degrade_publisher)
     yahoo_finance = YahooFinanceCollector(settings, pool, redis_client)
-    derivatives_engine = DerivativesEngine(settings, pool, redis_client)
+    derivatives_engine = DerivativesEngine(settings, pool, redis_client, degrade_publisher)
     vol_expansion = VolExpansionEvaluator(settings, redis_client, alert_engine)
     leadership_rotation = LeadershipRotationEvaluator(settings, redis_client, alert_engine)
     breakout = BreakoutEvaluator(settings, redis_client, alert_engine)

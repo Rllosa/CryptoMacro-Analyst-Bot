@@ -97,6 +97,61 @@ class CryptoMacroBot(commands.Bot):
     def _build_embed(self, payload: dict) -> discord.Embed:
         return format_alert_embed(payload)
 
+    async def start_ops_listener(self) -> None:
+        try:
+            js = self.nc.jetstream()
+            sub = await js.subscribe(
+                "ops.health",
+                durable="discord-ops-health-consumer",
+                stream="OPS_HEALTH",
+            )
+            logger.info("NATS ops listener started (durable=discord-ops-health-consumer)")
+            async for msg in sub.messages:
+                await self._on_ops_health(msg)
+        except Exception as e:
+            logger.warning(
+                "NATS ops listener DEGRADED: %s — bot stays online, slash commands work", e
+            )
+
+    async def _on_ops_health(self, msg) -> None:
+        try:
+            payload = json.loads(msg.data.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error("Invalid ops.health message encoding: %s", e)
+            await msg.ack()
+            return
+
+        try:
+            await msg.ack()
+            channel = self._get_channel("system_health")
+            if channel is None:
+                logger.warning("discord_channel_system_health not configured")
+                return
+            embed = self._build_ops_embed(payload)
+            await channel.send(embed=embed)
+        except Exception as e:
+            logger.error("Error posting ops health event: %s", e)
+
+    def _build_ops_embed(self, payload: dict) -> discord.Embed:
+        _STATUS_COLORS = {
+            "HEALTHY": 0x22C55E,   # green — recovery
+            "DEGRADED": 0xF97316,  # orange
+            "DOWN": 0xEF4444,      # red
+        }
+        status = payload.get("status", "DEGRADED")
+        color = _STATUS_COLORS.get(status, 0xA3A3A3)
+        component = payload.get("component", "unknown")
+        reason = payload.get("reason", "")
+        timestamp = (payload.get("timestamp") or "")[:16].replace("T", " ")
+
+        icon = {"DOWN": "🔴", "DEGRADED": "🟠", "HEALTHY": "🟢"}.get(status, "⚪")
+        title = f"{icon} {component} → {status}"
+        embed = discord.Embed(title=title, color=color)
+        if reason:
+            embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text=f"{timestamp} UTC")
+        return embed
+
     async def start_brief_listener(self) -> None:
         try:
             js = self.nc.jetstream()

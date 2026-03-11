@@ -36,10 +36,12 @@ from derivatives.indicators import (
     compute_oi_drop_1h,
 )
 from features.db import upsert_features
+from ops.degrade import DegradePublisher, STATUS_DEGRADED, STATUS_HEALTHY
 
 log = structlog.get_logger()
 
 _SYMBOLS = ["BTC", "ETH", "SOL", "HYPE"]
+_MAX_FAILURES = 3
 
 
 class DerivativesEngine:
@@ -47,15 +49,24 @@ class DerivativesEngine:
     Background service that computes derivatives features every 5 minutes.
 
     Per-symbol failures are logged and skipped; remaining symbols still write.
-    One failing cycle never crashes the service.
+    After _MAX_FAILURES consecutive full-cycle failures, transitions to DEGRADED
+    and notifies via DegradePublisher (OPS-3).
     """
 
-    def __init__(self, settings: Settings, pool: Any, redis: Any) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        pool: Any,
+        redis: Any,
+        degrade_publisher: DegradePublisher | None = None,
+    ) -> None:
         self._settings = settings
         self._pool = pool
         self._redis = redis
         self._params = DerivativeParams.load(settings.thresholds_path)
         self._shutdown = asyncio.Event()
+        self._consecutive_failures = 0
+        self._degrade_publisher = degrade_publisher
 
     def request_shutdown(self) -> None:
         """Signal the run loop to stop after the current cycle completes."""
@@ -76,8 +87,25 @@ class DerivativesEngine:
             cycle_start = time.monotonic()
             try:
                 await self._compute_cycle(datetime.now(tz=timezone.utc))
+                if self._consecutive_failures > 0:
+                    if self._degrade_publisher is not None:
+                        await self._degrade_publisher.report(
+                            "derivatives_engine", STATUS_HEALTHY, "Derivatives computation recovered"
+                        )
+                self._consecutive_failures = 0
             except Exception as exc:
-                log.error("derivatives_engine.cycle_failed", error=str(exc))
+                self._consecutive_failures += 1
+                log.error(
+                    "derivatives_engine.cycle_failed",
+                    error=str(exc),
+                    consecutive=self._consecutive_failures,
+                )
+                if self._consecutive_failures >= _MAX_FAILURES and self._degrade_publisher is not None:
+                    await self._degrade_publisher.report(
+                        "derivatives_engine",
+                        STATUS_DEGRADED,
+                        f"Derivatives computation failing — {self._consecutive_failures} consecutive errors",
+                    )
 
             elapsed = time.monotonic() - cycle_start
             sleep_secs = max(0.0, self._settings.feature_interval_secs - elapsed)
