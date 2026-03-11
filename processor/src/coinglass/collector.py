@@ -12,6 +12,7 @@ from psycopg_pool import AsyncConnectionPool
 from config import Settings
 from coinglass.db import upsert_derivatives
 from coinglass.models import FundingEntry, LiqEntry, LongShortEntry, OIEntry
+from ops.degrade import DegradePublisher, STATUS_DEGRADED, STATUS_DOWN, STATUS_HEALTHY
 
 log = structlog.get_logger()
 
@@ -31,17 +32,22 @@ class CoinglassCollector:
 
     Graceful degradation: per-symbol failures are logged and skipped; the
     remaining symbols still write. After _MAX_FAILURES consecutive full-cycle
-    failures a warning is logged, but the service keeps running so other
-    workers (FeatureEngine, etc.) are unaffected.
+    failures, transitions to DOWN and notifies via DegradePublisher (OPS-3).
     """
 
     _MAX_FAILURES = 3
 
-    def __init__(self, settings: Settings, pool: AsyncConnectionPool) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        pool: AsyncConnectionPool,
+        degrade_publisher: DegradePublisher | None = None,
+    ) -> None:
         self._settings = settings
         self._pool = pool
         self._shutdown = asyncio.Event()
         self._consecutive_failures = 0
+        self._degrade_publisher = degrade_publisher
         # Semaphore caps concurrent outbound HTTP calls regardless of symbol count
         self._sem = asyncio.Semaphore(10)
 
@@ -64,6 +70,12 @@ class CoinglassCollector:
             cycle_start = time.monotonic()
             try:
                 await self._run_cycle()
+                if self._consecutive_failures > 0:
+                    # Recovered — notify on transition back to HEALTHY
+                    if self._degrade_publisher is not None:
+                        await self._degrade_publisher.report(
+                            "coinglass", STATUS_HEALTHY, "Coinglass API recovered"
+                        )
                 self._consecutive_failures = 0
             except Exception as exc:
                 self._consecutive_failures += 1
@@ -77,6 +89,13 @@ class CoinglassCollector:
                         "coinglass_collector.degraded",
                         consecutive=self._consecutive_failures,
                     )
+                    if self._degrade_publisher is not None:
+                        status = STATUS_DOWN if self._consecutive_failures >= self._MAX_FAILURES * 2 else STATUS_DEGRADED
+                        await self._degrade_publisher.report(
+                            "coinglass",
+                            status,
+                            f"Coinglass API unreachable — {self._consecutive_failures} consecutive failures",
+                        )
 
             elapsed = time.monotonic() - cycle_start
             sleep_secs = max(0.0, self._settings.coinglass_poll_interval_secs - elapsed)

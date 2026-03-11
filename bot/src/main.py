@@ -51,6 +51,7 @@ async def main() -> None:
     # Start NATS listeners concurrently before bot.start() blocks
     nats_task = asyncio.create_task(bot.start_nats_listener())
     brief_task = asyncio.create_task(bot.start_brief_listener())
+    ops_task = asyncio.create_task(bot.start_ops_listener())
 
     try:
         await bot.start(settings.discord_bot_token)
@@ -59,7 +60,8 @@ async def main() -> None:
     finally:
         nats_task.cancel()
         brief_task.cancel()
-        for task in (nats_task, brief_task):
+        ops_task.cancel()
+        for task in (nats_task, brief_task, ops_task):
             try:
                 await task
             except asyncio.CancelledError:
