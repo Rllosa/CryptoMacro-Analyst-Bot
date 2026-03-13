@@ -19,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from config import ApiSettings
 from health import HealthStore, _run_health_checks, health_poll_loop
+from routes.eval import router as eval_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(health_poll_loop(store, pool, redis))
     app.state.health_store = store
     app.state._health_task = task
+    app.state.redis = redis  # shared for eval + future routes
 
     logger.info("API startup complete")
     yield
@@ -67,6 +69,8 @@ app = FastAPI(
     description="REST API for dashboard and integrations",
     lifespan=lifespan,
 )
+
+app.include_router(eval_router)
 
 
 @app.get("/")

@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "eval_metrics",
+  "title": "EV-2 Alert Quality Metrics",
+  "description": "Alert quality metrics returned by /api/eval/metrics. Each window is either a MetricsWindow object or null if not yet computed.",
+  "type": "object",
+  "required": ["7d", "30d"],
+  "additionalProperties": false,
+  "properties": {
+    "7d":  { "$ref": "#/$defs/window" },
+    "30d": { "$ref": "#/$defs/window" }
+  },
+  "$defs": {
+    "window": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/metrics_window" }
+      ]
+    },
+    "metrics_window": {
+      "type": "object",
+      "required": [
+        "computed_at",
+        "config_hash",
+        "window_days",
+        "total_alerts",
+        "by_type",
+        "by_severity",
+        "by_regime"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "computed_at":    { "type": "string", "format": "date-time" },
+        "config_hash":    { "type": "string", "minLength": 12, "maxLength": 12 },
+        "window_days":    { "type": "integer", "enum": [7, 30] },
+        "total_alerts":   { "type": "integer", "minimum": 0 },
+        "by_type": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/bucket" }
+        },
+        "by_severity": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/bucket" }
+        },
+        "by_regime": {
+          "type": "object",
+          "description": "Outer key: alert_type. Inner key: regime name.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/bucket" }
+          }
+        }
+      }
+    },
+    "bucket": {
+      "type": "object",
+      "required": [
+        "count",
+        "coverage_4h",
+        "coverage_12h",
+        "hit_rate",
+        "fp_rate",
+        "avg_move_4h_pct",
+        "avg_move_12h_pct"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "count":             { "type": "integer", "minimum": 0 },
+        "coverage_4h":       { "type": "number", "minimum": 0, "maximum": 1 },
+        "coverage_12h":      { "type": "number", "minimum": 0, "maximum": 1 },
+        "hit_rate":          { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "fp_rate":           { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "avg_move_4h_pct":   { "type": ["number", "null"] },
+        "avg_move_12h_pct":  { "type": ["number", "null"] }
+      }
+    }
+  }
+}

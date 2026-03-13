@@ -55,6 +55,7 @@ from llm.news_classifier import NewsClassifier  # noqa: E402
 from llm.scheduler import DailyBriefScheduler  # noqa: E402
 from normalizer import Normalizer  # noqa: E402
 from eval.tracker import AlertMoveTracker  # noqa: E402
+from eval.metrics_service import MetricsService  # noqa: E402
 from ops.degrade import DegradePublisher, setup_stream as ops_stream_setup  # noqa: E402
 
 log = structlog.get_logger()
@@ -147,6 +148,7 @@ async def main() -> None:
     crowded_leverage = CrowdedLeverageEvaluator(settings, redis_client, alert_engine)
     deleveraging_event = DeleveragingEvaluator(settings, redis_client, alert_engine, event_analyzer)
     alert_move_tracker = AlertMoveTracker(pool)
+    metrics_service = MetricsService(settings, pool, redis_client)
 
     # On-demand brief trigger via Core NATS (bot publishes briefs.request)
     async def _on_brief_request(msg: Any) -> None:
@@ -181,6 +183,7 @@ async def main() -> None:
         crowded_leverage.request_shutdown()
         deleveraging_event.request_shutdown()
         alert_move_tracker.request_shutdown()
+        metrics_service.request_shutdown()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _handle_signal)
@@ -209,6 +212,7 @@ async def main() -> None:
         crowded_leverage.run(),
         deleveraging_event.run(),
         alert_move_tracker.run(),
+        metrics_service.run(),
     )
 
     await nc.close()
