@@ -1,10 +1,7 @@
-#!/usr/bin/env python3
 """
-Threshold tuning framework (EV-3)
+EV-3 threshold tuning framework lives at processor/src/eval/tuner.py.
 
-Suggests threshold adjustments based on evaluation data.
+Run from the processor service:
+    cd processor
+    .venv/bin/python -m eval.tuner --days 30 [--out report.json]
 """
-
-# TODO (EV-3): Implement threshold comparison on historical data
-# TODO (EV-3): Generate recommended threshold adjustments
-# TODO (EV-3): Provide impact estimates for suggested changes
