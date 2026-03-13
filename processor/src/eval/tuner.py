@@ -20,8 +20,6 @@ import json
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any
-
 import structlog
 import yaml
 import psycopg
