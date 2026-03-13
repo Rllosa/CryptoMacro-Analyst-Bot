@@ -486,3 +486,13 @@ news_event:
 # - NETFLOW_SHIFT (Phase 4: on-chain)
 # - Risk score weights
 # - Confirmation requirements for on-chain alerts
+
+# =============================================================================
+# EVALUATION METRICS (EV-2)
+# Quality metrics: hit rate, FP rate, avg move — computed hourly by MetricsService
+# =============================================================================
+eval:
+  hit_threshold_pct: 1.0       # |move_4h_pct| >= this = "hit" (price reacted meaningfully)
+  min_sample_size: 5           # min alerts before reporting hit_rate (avoid noise on sparse types)
+  weekly_summary_day: 6        # ISO weekday: 6 = Sunday
+  redis_ttl_secs: 7200         # 2h TTL on metrics cache (1h cycle + safety margin)
