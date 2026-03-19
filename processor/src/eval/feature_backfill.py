@@ -1,8 +1,9 @@
 """
 SOLO-143: EV-4b Feature History Backfill
 
-Populates computed_features and cross_features from existing market_candles
-so EV-4 backtesting can run on real historical data.
+Populates computed_features and cross_features from the candles_5m view
+(continuous aggregate over market_candles) so EV-4 backtesting can run
+on real historical data.
 
 The live feature engine writes only to Redis (ephemeral). This CLI reuses
 the same pure compute functions (compute_all_features, compute_all_cross_features)
@@ -45,12 +46,11 @@ log = structlog.get_logger()
 # ---------------------------------------------------------------------------
 
 _FETCH_CANDLES_SQL = """
-    SELECT time, symbol, open, high, low, close, volume
-    FROM market_candles
+    SELECT bucket AS time, symbol, open, high, low, close, volume
+    FROM candles_5m
     WHERE symbol = ANY(%s)
-      AND timeframe = '5m'
-      AND time >= %s
-    ORDER BY symbol, time ASC
+      AND bucket >= %s
+    ORDER BY symbol, bucket ASC
 """
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,9 @@ def build_computed_rows(
             if not math.isnan(value):
                 all_rows.append((cycle_time, symbol, name, value, None))
 
-    return [all_rows[i : i + chunk_size * 30] for i in range(0, len(all_rows), chunk_size * 30)]
+    # cap at 10 000 rows per batch (5 cols × 10 000 = 50 000 params < 65 535 PG limit)
+    batch = chunk_size * 20
+    return [all_rows[i : i + batch] for i in range(0, len(all_rows), batch)]
 
 
 def build_cross_rows(
