@@ -52,6 +52,7 @@ async def main() -> None:
     nats_task = asyncio.create_task(bot.start_nats_listener())
     brief_task = asyncio.create_task(bot.start_brief_listener())
     ops_task = asyncio.create_task(bot.start_ops_listener())
+    event_analysis_task = asyncio.create_task(bot.start_event_analysis_listener())
 
     try:
         await bot.start(settings.discord_bot_token)
@@ -61,7 +62,8 @@ async def main() -> None:
         nats_task.cancel()
         brief_task.cancel()
         ops_task.cancel()
-        for task in (nats_task, brief_task, ops_task):
+        event_analysis_task.cancel()
+        for task in (nats_task, brief_task, ops_task, event_analysis_task):
             try:
                 await task
             except asyncio.CancelledError:

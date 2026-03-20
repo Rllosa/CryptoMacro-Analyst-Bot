@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 
 from config import BotSettings
-from embeds import format_alert_embed
+from embeds import format_alert_embed, format_event_analysis_embed
 from routing import AlertRouter
 
 logger = logging.getLogger(__name__)
@@ -230,6 +230,41 @@ class CryptoMacroBot(commands.Bot):
         )
 
         return embed
+
+    async def start_event_analysis_listener(self) -> None:
+        try:
+            js = self.nc.jetstream()
+            sub = await js.subscribe(
+                "events.analysis",
+                durable="discord-event-analysis-consumer",
+                stream="EVENT_ANALYSIS",
+            )
+            logger.info("NATS event analysis listener started (durable=discord-event-analysis-consumer)")
+            async for msg in sub.messages:
+                await self._on_event_analysis(msg)
+        except Exception as e:
+            logger.warning(
+                "NATS event analysis listener DEGRADED: %s — bot stays online, slash commands work", e
+            )
+
+    async def _on_event_analysis(self, msg) -> None:
+        try:
+            payload = json.loads(msg.data.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error("Invalid event analysis message encoding: %s", e)
+            await msg.ack()
+            return
+
+        try:
+            await msg.ack()
+            channel = self._get_channel("event_analysis")
+            if channel is None:
+                logger.warning("discord_channel_event_analysis not configured")
+                return
+            embed = format_event_analysis_embed(payload)
+            await channel.send(embed=embed)
+        except Exception as e:
+            logger.error("Error posting event analysis: %s", e)
 
     def request_shutdown(self) -> None:
         self._shutdown_event.set()
