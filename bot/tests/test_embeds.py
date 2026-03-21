@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.embeds import format_alert_embed
+from src.embeds import format_alert_embed, format_event_analysis_embed
 
 
 def _base_payload(alert_type: str, severity: str = "HIGH", symbol: str = "btc", **tv_overrides) -> dict:
@@ -142,3 +142,80 @@ def test_empty_trigger_values_no_error():
     # All fields default to N/A — no KeyError raised
     for field in d.get("fields", []):
         assert field["value"] != ""
+
+
+# ── event analysis embed tests ───────────────────────────────────────────────
+
+def _base_event_analysis_payload(**overrides) -> dict:
+    base = {
+        "report_id": "test-uuid",
+        "report_type": "event_analysis",
+        "generated_at": "2026-03-19T12:00:00+00:00",
+        "trigger_alert": {
+            "alert_id": "alert-uuid",
+            "alert_type": "DELEVERAGING_EVENT",
+            "symbol": "BTCUSDT",
+            "severity": "HIGH",
+            "time": "2026-03-19T12:00:00+00:00",
+            "conditions": {"liq_1h_usd": 60_000_000},
+        },
+        "context": {
+            "regime": {"current": "VOL_EXPANSION", "confidence": 0.78},
+            "recent_alerts": [],
+            "features": {},
+        },
+        "analysis": {
+            "summary": "BTC cascade: $60M liquidated in 1 hour.",
+            "interpretation": (
+                "Forced deleveraging confirmed by OI drop. Funding z-score was 2.5 "
+                "before the cascade, indicating crowded positioning."
+            ),
+            "watch_next": ["BTC $80k support", "OI recovery within 2h"],
+        },
+        "llm_metadata": {
+            "model": "claude-sonnet-4-6",
+            "tokens_used": 420,
+            "cost_usd": 0.003,
+            "generation_time_ms": 1800,
+        },
+    }
+    base.update(overrides)
+    return base
+
+
+def test_event_analysis_embed_structure():
+    """Title contains alert type and symbol; description leads with bold summary."""
+    d = format_event_analysis_embed(_base_event_analysis_payload()).to_dict()
+    assert "DELEVERAGING_EVENT" in d["title"]
+    assert "BTCUSDT" in d["title"]
+    assert d["color"] == 0xEF4444  # HIGH severity = red
+    # Description: summary bold first, then interpretation
+    assert "**BTC cascade" in d["description"]
+    assert "Forced deleveraging" in d["description"]
+
+
+def test_event_analysis_embed_watch_next_and_regime():
+    """Watch Next bullets and Regime field are present."""
+    d = format_event_analysis_embed(_base_event_analysis_payload()).to_dict()
+    names = [f["name"] for f in d.get("fields", [])]
+    assert "Watch Next" in names
+    assert "Regime" in names
+    watch_field = next(f for f in d["fields"] if f["name"] == "Watch Next")
+    assert "• BTC $80k support" in watch_field["value"]
+    regime_field = next(f for f in d["fields"] if f["name"] == "Regime")
+    assert "VOL_EXPANSION" in regime_field["value"]
+    assert "78%" in regime_field["value"]
+
+
+def test_event_analysis_embed_fallback_text():
+    """LLM unavailable fallback summary still renders without error."""
+    payload = _base_event_analysis_payload()
+    payload["analysis"]["summary"] = "LLM unavailable — event analysis could not be generated."
+    payload["analysis"]["interpretation"] = (
+        "Claude API was unreachable when this alert fired. "
+        "The alert itself was delivered and stored in the alerts table."
+    )
+    payload["analysis"]["watch_next"] = ["Review raw trigger values in trigger_alert.conditions"]
+    d = format_event_analysis_embed(payload).to_dict()
+    assert "LLM unavailable" in d["description"]
+    assert "Watch Next" in [f["name"] for f in d.get("fields", [])]

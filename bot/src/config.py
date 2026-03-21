@@ -13,6 +13,7 @@ class BotSettings(BaseSettings):
     discord_channel_onchain: int
     discord_channel_bot_commands: int
     discord_channel_system_health: int
+    discord_channel_event_analysis: int
 
     # Individual connection components (resolved from .env)
     postgres_host: str = "localhost"

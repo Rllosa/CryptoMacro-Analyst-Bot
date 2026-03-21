@@ -21,6 +21,7 @@ def _make_settings(**overrides) -> BotSettings:
         discord_channel_onchain=555,
         discord_channel_bot_commands=666,
         discord_channel_system_health=777,
+        discord_channel_event_analysis=888,
         db_dsn="postgresql://test",
         redis_url="redis://localhost",
         nats_url="nats://localhost",
@@ -121,6 +122,59 @@ async def test_nats_failure_bot_stays_online(caplog):
 
     with caplog.at_level(logging.WARNING):
         await bot.start_nats_listener()
+
+    assert "DEGRADED" in caplog.text
+    assert not bot._shutdown_event.is_set()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_posted_to_channel():
+    """_on_event_analysis() parses envelope and sends embed to event_analysis channel."""
+    bot = _make_bot()
+
+    mock_channel = AsyncMock()
+
+    def _get_channel(cid):
+        return mock_channel if cid == 888 else None
+
+    bot.get_channel = MagicMock(side_effect=_get_channel)
+
+    msg = AsyncMock()
+    msg.data = json.dumps({
+        "report_id": "test-uuid",
+        "report_type": "event_analysis",
+        "generated_at": "2026-03-19T12:00:00+00:00",
+        "trigger_alert": {
+            "alert_id": "alert-uuid",
+            "alert_type": "DELEVERAGING_EVENT",
+            "symbol": "BTCUSDT",
+            "severity": "HIGH",
+            "time": "2026-03-19T12:00:00+00:00",
+            "conditions": {},
+        },
+        "context": {"regime": {"current": "VOL_EXPANSION", "confidence": 0.78}, "recent_alerts": [], "features": {}},
+        "analysis": {
+            "summary": "BTC cascade.",
+            "interpretation": "Forced deleveraging confirmed.",
+            "watch_next": ["Watch BTC $80k"],
+        },
+        "llm_metadata": {"model": "claude-sonnet-4-6", "tokens_used": 400, "cost_usd": 0.003, "generation_time_ms": 1500},
+    }).encode()
+
+    await bot._on_event_analysis(msg)
+
+    mock_channel.send.assert_called_once()
+    msg.ack.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_event_analysis_nats_degraded(caplog):
+    """NATS exception in event analysis listener → DEGRADED logged, no crash."""
+    bot = _make_bot()
+    bot.nc.jetstream = MagicMock(side_effect=Exception("connection refused"))
+
+    with caplog.at_level(logging.WARNING):
+        await bot.start_event_analysis_listener()
 
     assert "DEGRADED" in caplog.text
     assert not bot._shutdown_event.is_set()
