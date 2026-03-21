@@ -1,0 +1,25 @@
+{
+  "alert_id": "<uuid>",
+  "alert_type": "BREAKOUT",
+  "conditions": {
+    "input_snapshot": {
+      "breakout_4h_high": 1.0,
+      "close": 95100.0,
+      "volume_zscore": 2.2
+    },
+    "trigger_values": {
+      "direction": "up",
+      "level": 95000.0,
+      "volume_zscore": 2.2
+    }
+  },
+  "context": {
+    "confidence": 0.9,
+    "regime": "RISK_ON_TREND"
+  },
+  "cooldown_until": "2026-03-01T10:00:00+00:00",
+  "message": "BREAKOUT triggered: direction=up, level=95000.0, volume_zscore=2.2",
+  "severity": "HIGH",
+  "symbol": "BTCUSDT",
+  "time": "2026-03-01T09:00:00+00:00"
+}

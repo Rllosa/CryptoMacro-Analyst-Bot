@@ -1,0 +1,25 @@
+{
+  "alert_id": "<uuid>",
+  "alert_type": "VOL_EXPANSION",
+  "conditions": {
+    "input_snapshot": {
+      "rsi_14": 68.0,
+      "rv_1h": 0.0225,
+      "volume_zscore": 1.8
+    },
+    "trigger_values": {
+      "direction": "up",
+      "rv_1h_zscore": 2.5,
+      "volume_zscore": 1.8
+    }
+  },
+  "context": {
+    "confidence": 0.85,
+    "regime": "RISK_ON_TREND"
+  },
+  "cooldown_until": "2026-03-01T09:30:00+00:00",
+  "message": "VOL_EXPANSION triggered: rv_1h_zscore=2.5, volume_zscore=1.8, direction=up",
+  "severity": "HIGH",
+  "symbol": "BTCUSDT",
+  "time": "2026-03-01T09:00:00+00:00"
+}
